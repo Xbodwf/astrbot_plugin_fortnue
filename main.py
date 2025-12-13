@@ -19,7 +19,7 @@ try:
 except:
     webcolors = None
 
-ssl._create_default_https_context = ssl._create_unverified_context
+#ssl._create_default_https_context = ssl._create_unverified_context
 
 
 LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
