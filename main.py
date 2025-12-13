@@ -1,5 +1,5 @@
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import aiohttp
@@ -10,6 +10,8 @@ import json
 import os
 import tempfile
 import ssl
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 try:
     from colornamer import get_color_from_rgb
 except:
@@ -18,8 +20,6 @@ try:
     import webcolors
 except:
     webcolors = None
-
-#ssl._create_default_https_context = ssl._create_unverified_context
 
 
 LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
@@ -33,7 +33,7 @@ class FortunePlugin(Star):
         super().__init__(context)
         self.data_dir = os.path.dirname(os.path.abspath(__file__))
         self.backgrounds_path = os.path.join(self.data_dir, "backgrounds.json")
-        self.yunshi_data_path = os.path.join(self.data_dir, "yunshi.json")
+        self.yunshi_data_path = StarTools.get_data_dir("astrbot_plugin_fortnue") / "yunshi.json"
         self.backgrounds_data = self._load_backgrounds()
         self.user_last_backgrounds = {}
         self.user_fortune_data = self._load_yunshi_data()
@@ -85,7 +85,7 @@ class FortunePlugin(Star):
             }
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout), 
-                                       headers=headers, ssl=False) as resp:
+                                       headers=headers) as resp:
                     if resp.status == 200:
                         data = await resp.read()
                         return Image.open(BytesIO(data))
@@ -417,7 +417,8 @@ class FortunePlugin(Star):
             font_medium = ImageFont.truetype(font_path, 28)
             font_small = ImageFont.truetype(font_path, 28)
             font_tiny = ImageFont.truetype(font_path, 22)
-        except:
+        except (OSError, FileNotFoundError) as e:
+            logger.warning(f"加载字体失败，使用默认字体: {e}")
             font_large = ImageFont.load_default()
             font_medium = ImageFont.load_default()
             font_small = ImageFont.load_default()
@@ -545,18 +546,21 @@ class FortunePlugin(Star):
             
             fortune_data = self._get_fortune_for_user(user_id)
             
-            result_image = self._create_fortune_image(background, avatar, user_name, fortune_data)
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result_image = await loop.run_in_executor(executor, self._create_fortune_image, background, avatar, user_name, fortune_data)
             
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
                 result_image.save(f, format="JPEG", quality=90)
                 temp_path = f.name
             
-            yield event.image_result(temp_path)
-            
             try:
-                os.remove(temp_path)
-            except:
-                pass
+                yield event.image_result(temp_path)
+            finally:
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
             
         except Exception as e:
             logger.error(f"生成运势图片失败: {e}")
@@ -576,36 +580,43 @@ class FortunePlugin(Star):
         try:
             background = self.user_last_backgrounds[user_id]
             
-            target_width = 800
-            target_height = 1200
+            def process_background(bg):
+                target_width = 800
+                target_height = 1200
+                
+                bg_ratio = bg.width / bg.height
+                target_ratio = target_width / target_height
+                
+                if bg_ratio > target_ratio:
+                    new_width = int(bg.height * target_ratio)
+                    left = (bg.width - new_width) // 2
+                    bg = bg.crop((left, 0, left + new_width, bg.height))
+                else:
+                    new_height = int(bg.width / target_ratio)
+                    top = (bg.height - new_height) // 2
+                    bg = bg.crop((0, top, bg.width, top + new_height))
+                
+                result_image = bg.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                if result_image.mode == 'RGBA':
+                    result_image = result_image.convert('RGB')
+                return result_image
             
-            bg_ratio = background.width / background.height
-            target_ratio = target_width / target_height
-            
-            if bg_ratio > target_ratio:
-                new_width = int(background.height * target_ratio)
-                left = (background.width - new_width) // 2
-                background = background.crop((left, 0, left + new_width, background.height))
-            else:
-                new_height = int(background.width / target_ratio)
-                top = (background.height - new_height) // 2
-                background = background.crop((0, top, background.width, top + new_height))
-            
-            result_image = background.resize((target_width, target_height), Image.Resampling.LANCZOS)
-            
-            if result_image.mode == 'RGBA':
-                result_image = result_image.convert('RGB')
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result_image = await loop.run_in_executor(executor, process_background, background)
             
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
                 result_image.save(f, format="JPEG", quality=95)
                 temp_path = f.name
             
-            yield event.image_result(temp_path)
-            
             try:
-                os.remove(temp_path)
-            except:
-                pass
+                yield event.image_result(temp_path)
+            finally:
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
                 
         except Exception as e:
             logger.error(f"获取上次背景图片失败: {e}")
