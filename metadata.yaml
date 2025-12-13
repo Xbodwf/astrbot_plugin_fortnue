@@ -1,0 +1,5 @@
+name: astrbot_plugin_fortnue
+desc: 今日运势插件 - 生成包含用户头像、名称、日期和运势内容的精美图片
+version: 1.16.0
+author: Xbodw
+repo: https://github.com/your-repo/astrbot_plugin_yunshi

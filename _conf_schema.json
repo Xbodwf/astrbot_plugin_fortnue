@@ -1,0 +1,52 @@
+{
+  "fortune_config": {
+    "description": "运势配置",
+    "type": "object",
+    "hint": "配置今日运势相关参数",
+    "items": {
+      "request_timeout": {
+        "description": "图片下载超时时间",
+        "type": "float",
+        "hint": "单位：秒，下载背景图片的最大等待时间",
+        "default": 30.0
+      },
+      "avatar_size": {
+        "description": "头像大小",
+        "type": "int",
+        "hint": "用户头像的显示尺寸（像素）",
+        "default": 80
+      },
+      "card_height": {
+        "description": "信息卡片高度",
+        "type": "int",
+        "hint": "底部信息卡片的高度（像素）",
+        "default": 200
+      }
+    }
+  },
+  "display_config": {
+    "description": "显示配置",
+    "type": "object",
+    "hint": "控制运势图片的显示样式",
+    "items": {
+      "show_lucky_tip": {
+        "description": "显示幸运提示",
+        "type": "bool",
+        "hint": "是否在运势图片中显示幸运物品/颜色/数字等提示",
+        "default": true
+      },
+      "show_daily_advice": {
+        "description": "显示每日建议",
+        "type": "bool",
+        "hint": "是否在运势图片中显示每日行动建议",
+        "default": true
+      },
+      "image_quality": {
+        "description": "图片质量",
+        "type": "int",
+        "hint": "输出图片的JPEG质量（1-100）",
+        "default": 95
+      }
+    }
+  }
+}

@@ -1,0 +1,612 @@
+from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.star import Context, Star, register
+from astrbot.api import logger
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import aiohttp
+from io import BytesIO
+from datetime import datetime
+import random
+import json
+import os
+import tempfile
+import ssl
+try:
+    from colornamer import get_color_from_rgb
+except:
+    get_color_from_rgb = None
+try:
+    import webcolors
+except:
+    webcolors = None
+
+ssl._create_default_https_context = ssl._create_unverified_context
+
+
+LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
+
+
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 输入「今日运势」获取专属运势图", "1.16.0")
+class FortunePlugin(Star):
+    """今日运势插件 - 生成精美的运势图片"""
+    
+    def __init__(self, context: Context):
+        super().__init__(context)
+        self.data_dir = os.path.dirname(os.path.abspath(__file__))
+        self.backgrounds_path = os.path.join(self.data_dir, "backgrounds.json")
+        self.yunshi_data_path = os.path.join(self.data_dir, "yunshi.json")
+        self.backgrounds_data = self._load_backgrounds()
+        self.user_last_backgrounds = {}
+        self.user_fortune_data = self._load_yunshi_data()
+        
+    def _load_backgrounds(self) -> dict:
+        """加载背景图片配置"""
+        try:
+            with open(self.backgrounds_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"加载背景图片配置失败: {e}")
+            return {}
+    
+    def _load_yunshi_data(self) -> dict:
+        """加载用户运势数据"""
+        try:
+            if os.path.exists(self.yunshi_data_path):
+                with open(self.yunshi_data_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception as e:
+            logger.error(f"加载运势数据失败: {e}")
+        return {}
+    
+    def _save_yunshi_data(self):
+        """保存用户运势数据到文件"""
+        try:
+            with open(self.yunshi_data_path, "w", encoding="utf-8") as f:
+                json.dump(self.user_fortune_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"保存运势数据失败: {e}")
+    
+    def _get_random_background_url(self) -> str:
+        """随机获取一个背景图片URL"""
+        if not self.backgrounds_data:
+            return ""
+        all_urls = []
+        for category, urls in self.backgrounds_data.items():
+            if isinstance(urls, list):
+                all_urls.extend(urls)
+        if not all_urls:
+            return ""
+        return random.choice(all_urls)
+    
+    async def _download_image(self, url: str, timeout: int = 15) -> Image.Image | None:
+        """异步下载图片"""
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout), 
+                                       headers=headers, ssl=False) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        return Image.open(BytesIO(data))
+        except Exception as e:
+            logger.error(f"下载图片失败 {url}: {e}")
+        return None
+    
+    async def _get_avatar_url(self, event: AstrMessageEvent) -> str:
+        """获取用户头像URL"""
+        user_id = event.get_sender_id()
+        return f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=640"
+    
+    def _make_circle_image(self, img: Image.Image, size: tuple) -> Image.Image:
+        """将图片裁剪成圆形"""
+        img = img.resize(size, Image.Resampling.LANCZOS)
+        mask = Image.new('L', size, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.ellipse([0, 0, size[0], size[1]], fill=255)
+        result = Image.new('RGBA', size, (0, 0, 0, 0))
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+        result.paste(img, mask=mask)
+        return result
+    
+    def _add_avatar_border(self, avatar: Image.Image, border_width: int = 4, 
+                           border_color: tuple = (255, 255, 255)) -> Image.Image:
+        """为圆形头像添加边框"""
+        new_size = (avatar.width + border_width * 2, avatar.height + border_width * 2)
+        bordered = Image.new('RGBA', new_size, (0, 0, 0, 0))
+        
+        mask = Image.new('L', new_size, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.ellipse([0, 0, new_size[0], new_size[1]], fill=255)
+        
+        border_layer = Image.new('RGBA', new_size, border_color + (255,))
+        bordered.paste(border_layer, mask=mask)
+        bordered.paste(avatar, (border_width, border_width), avatar)
+        return bordered
+    
+    def _load_fortune_data(self) -> dict:
+        """加载运势数据"""
+        fortune_data_path = os.path.join(self.data_dir, "fortune_data.json")
+        try:
+            with open(fortune_data_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Convert hex colors to RGB tuples
+                for level, fortunes in data.items():
+                    for fortune in fortunes:
+                        if "color" in fortune and isinstance(fortune["color"], str):
+                            # Convert hex to RGB
+                            hex_color = fortune["color"].lstrip('#')
+                            fortune["color"] = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                return data
+        except Exception as e:
+            logger.error(f"加载运势数据失败: {e}")
+            return {}
+    
+    def _english_color_name_from_rgb(self, rgb: tuple) -> str:
+        r, g, b = rgb
+        if get_color_from_rgb:
+            try:
+                info = get_color_from_rgb([r, g, b])
+                name = info.get('xkcd_color') or info.get('common_color') or info.get('design_color')
+                if isinstance(name, str):
+                    return name.lower()
+            except:
+                pass
+        if webcolors:
+            try:
+                return webcolors.rgb_to_name((r, g, b)).lower()
+            except:
+                pass
+        return ""
+        
+    def _zh_color_name_from_en(self, en_name: str) -> str:
+        if not en_name:
+            return "彩色"
+        s = en_name.replace('-', ' ').strip()
+        tokens = s.split()
+        adj = ""
+        base = ""
+        phrase = " ".join(tokens)
+        if "sky blue" in phrase:
+            base = "天蓝色"
+        elif "navy" in tokens:
+            base = "海军蓝"
+        elif "azure" in tokens or "cerulean" in tokens:
+            base = "蔚蓝色"
+        elif "aquamarine" in tokens:
+            base = "碧绿色"
+        elif "teal" in tokens:
+            base = "水鸭色"
+        elif "fuchsia" in tokens or "magenta" in tokens:
+            base = "洋红"
+        elif "maroon" in tokens:
+            base = "栗色"
+        elif "brown" in tokens:
+            base = "棕色"
+        elif "blue" in tokens:
+            base = "蓝色"
+        elif "green" in tokens:
+            base = "绿色"
+        elif "red" in tokens:
+            base = "红色"
+        elif "orange" in tokens:
+            base = "橙色"
+        elif "yellow" in tokens:
+            base = "黄色"
+        elif "purple" in tokens or "violet" in tokens:
+            base = "紫色"
+        elif "pink" in tokens:
+            base = "粉色"
+        elif "cyan" in tokens:
+            base = "青色"
+        elif "grey" in tokens or "gray" in tokens:
+            base = "灰色"
+        elif "black" in tokens:
+            base = "黑色"
+        elif "white" in tokens:
+            base = "白色"
+        if "light" in tokens:
+            adj = "淡"
+        elif "dark" in tokens or "deep" in tokens:
+            adj = "深"
+        elif "bright" in tokens:
+            adj = "亮"
+        elif "pale" in tokens:
+            adj = "浅"
+        if base:
+            if base.startswith("天") and adj:
+                return adj + base
+            return (adj + base) if adj else base
+        
+
+        # webcolor不支持中文,只能硬编码...
+        return "彩色"
+        
+    def _get_color_name(self, rgb: tuple) -> str:
+        """Get color name based on RGB value ranges"""
+        r, g, b = rgb
+        
+        # Calculate brightness
+        brightness = (r + g + b) / 3
+        
+        # Black, white, or gray
+        if brightness < 30:
+            return "黑色"
+        elif brightness > 240 and max(r,g,b) - min(r,g,b) < 30:
+            return "白色"
+        elif max(abs(r-g), abs(g-b), abs(b-r)) < 20:  # Similar values = gray
+            return "灰色"
+        
+        # Calculate dominant color
+        max_val = max(r, g, b)
+        min_val = min(r, g, b)
+        delta = max_val - min_val
+        
+        # Calculate hue
+        if delta == 0:
+            h = 0
+        elif max_val == r:
+            h = 60 * (((g - b) / delta) % 6)
+        elif max_val == g:
+            h = 60 * (((b - r) / delta) + 2)
+        else:  # max_val == b
+            h = 60 * (((r - g) / delta) + 4)
+        
+        # Normalize hue to 0-360
+        h = h % 360
+        
+        # Calculate saturation
+        if max_val == 0:
+            s = 0
+        else:
+            s = delta / max_val * 100
+        
+        # Determine color based on hue and saturation
+        if s < 20:  # Low saturation = gray
+            return "灰色"
+        elif h < 15 or h >= 345:  # Red
+            if s > 70 and r > 200 and g < 100 and b < 100:
+                return "正红色"
+            elif r > 200 and g > 150 and b > 150:
+                return "粉红色"
+            return "红色"
+        elif 15 <= h < 45:  # Orange
+            return "橙色"
+        elif 45 <= h < 75:  # Yellow
+            return "黄色"
+        elif 75 <= h < 165:  # Green
+            if max_val < 100:
+                return "深绿色"
+            return "绿色"
+        elif 165 <= h < 195:  # Cyan
+            return "青色"
+        elif 195 <= h < 255:  # Blue
+            if max_val < 100:
+                return "深蓝色"
+            return "蓝色"
+        elif 255 <= h < 285:  # Purple
+            return "紫色"
+        else:  # 285-345 Magenta
+            return "品红色"
+    
+    def _get_random_hex_color(self) -> dict:
+        """生成随机的十六进制颜色"""
+        import random
+        # Generate random RGB values
+        r = random.randint(0, 255)
+        g = random.randint(0, 255)
+        b = random.randint(0, 255)
+        hex_color = f"#{r:02x}{g:02x}{b:02x}".upper()
+
+        # 先尝试正规库命名，若失败则回退到旧算法
+        lib_name_zh = self._zh_color_name_from_en(self._english_color_name_from_rgb((r, g, b)))
+        final_name = lib_name_zh if lib_name_zh and lib_name_zh != "彩色" else self._get_color_name((r, g, b))
+
+        return {
+            "name": final_name,
+            "hex": hex_color,
+            "rgb": [r, g, b]
+        }
+        
+    def _get_fortune_for_user(self, user_id: str) -> dict:
+        """根据用户ID和日期获取或生成运势（同一天运势固定）"""
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        
+        # 检查是否已有当天运势数据
+        if user_id in self.user_fortune_data:
+            user_data = self.user_fortune_data[user_id]
+            if user_data.get("date") == today_str:
+                return user_data["fortune_data"]
+        
+        # 加载运势数据
+        fortune_data = self._load_fortune_data()
+        if not fortune_data:
+            # 如果加载失败，使用默认数据
+            return {
+                "fortune": {
+                    "level": "中吉", 
+                    "desc": "平稳安康，小有收获", 
+                    "color": (144, 238, 144)  # Light green
+                },
+                "lucky_color": self._get_random_hex_color(),
+                "lucky_number": random.choice(LUCKY_NUMBERS),
+                "advice": "今天适合：读书学习、整理房间",
+                "luck_value": 70
+            }
+        
+        # 生成新的运势数据
+        seed = f"{user_id}-{today_str}"
+        rng = random.Random(seed)
+        
+        # 从fortune_data.json中随机选择一个运势等级
+        luck_levels = list(fortune_data.keys())
+        selected_level = rng.choice(luck_levels)
+        level_data = fortune_data[selected_level]
+        fortune = rng.choice(level_data)
+        
+        # 获取幸运色和数字
+        lucky_color = self._get_random_hex_color()
+        lucky_number = rng.choice(LUCKY_NUMBERS)
+        advice = fortune.get('advice', '今天适合：保持好心情')
+        
+        # 准备返回的运势数据
+        result_data = {
+            "fortune": {
+                "level": fortune["level"],
+                "desc": fortune["desc"],
+                "color": fortune.get("color", (255, 255, 255))  # 使用JSON中定义的颜色，如果没有则使用白色
+            },
+            "lucky_color": lucky_color,
+            "lucky_number": lucky_number,
+            "advice": advice,
+            "luck_value": int(selected_level)  # 使用选择的等级作为幸运值
+        }
+        
+        # 存储到文件
+        self.user_fortune_data[user_id] = {
+            "date": today_str,
+            "fortune_data": result_data
+        }
+        self._save_yunshi_data()
+        
+        return result_data
+    
+    def _create_fortune_image(self, background: Image.Image, avatar: Image.Image | None,
+                              user_name: str, fortune_data: dict) -> Image.Image:
+        """创建运势图片"""
+        target_width = 800
+        target_height = 1200
+        
+        # 处理背景图片
+        bg_ratio = background.width / background.height
+        target_ratio = target_width / target_height
+        
+        if bg_ratio > target_ratio:
+            new_width = int(background.height * target_ratio)
+            left = (background.width - new_width) // 2
+            background = background.crop((left, 0, left + new_width, background.height))
+        else:
+            new_height = int(background.width / target_ratio)
+            top = (background.height - new_height) // 2
+            background = background.crop((0, top, background.width, top + new_height))
+        
+        background = background.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        
+        if background.mode != 'RGBA':
+            background = background.convert('RGBA')
+        
+        # 底部半透明遮罩
+        overlay = Image.new('RGBA', (target_width, target_height), (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        
+        gradient_start_y = target_height - 600
+        for y in range(gradient_start_y, target_height):
+            alpha = int(200 * (y - gradient_start_y) / (target_height - gradient_start_y))
+            overlay_draw.rectangle([(0, y), (target_width, y + 1)], fill=(0, 0, 0, alpha))
+        
+        background = Image.alpha_composite(background, overlay)
+        draw = ImageDraw.Draw(background)
+        
+        try:
+            font_path = os.path.join(self.data_dir, "fonts", "千图马克手写体.ttf")
+            if not os.path.exists(font_path):
+                font_path = os.path.join(self.data_dir, "fonts", "1.ttf")
+            
+            font_large = ImageFont.truetype(font_path, 72) # 这里字号部分非功能更新则不需要动
+            font_medium = ImageFont.truetype(font_path, 28)
+            font_small = ImageFont.truetype(font_path, 28)
+            font_tiny = ImageFont.truetype(font_path, 22)
+        except:
+            font_large = ImageFont.load_default()
+            font_medium = ImageFont.load_default()
+            font_small = ImageFont.load_default()
+            font_tiny = ImageFont.load_default()
+        
+        fortune = fortune_data["fortune"]
+        lucky_color = fortune_data["lucky_color"]
+        lucky_number = fortune_data["lucky_number"]
+        advice = fortune_data["advice"]
+        luck_value = fortune_data["luck_value"]
+        
+        fortune_color = fortune["color"]
+        if isinstance(fortune_color, list):
+            fortune_color = tuple(fortune_color)
+        
+        lucky_color_rgb = lucky_color["rgb"]
+        if isinstance(lucky_color_rgb, list):
+            lucky_color_rgb = tuple(lucky_color_rgb)
+        
+        content_start_y = target_height - 520
+        
+        avatar_size = 150
+        avatar_x = 50
+        avatar_y = content_start_y
+        
+        if avatar:
+            circle_avatar = self._make_circle_image(avatar, (avatar_size, avatar_size))
+            bordered_avatar = self._add_avatar_border(circle_avatar, 5, (255, 255, 255))
+            background.paste(bordered_avatar, (avatar_x, avatar_y), bordered_avatar)
+        
+        name_x = avatar_x + avatar_size + 30
+        name_y = avatar_y + 20
+        draw.text((name_x, name_y), user_name, fill=(255, 255, 255), font=font_medium)
+        
+        date_str = datetime.now().strftime("%Y年%m月%d日")
+        draw.text((name_x, name_y + 70), date_str, fill=(200, 200, 200), font=font_small)
+        
+        fortune_level = fortune["level"]
+        
+        bbox = draw.textbbox((0, 0), fortune_level, font=font_large)
+        level_width = bbox[2] - bbox[0]
+        level_x = target_width - level_width - 50
+        level_y = content_start_y + 20
+        
+        draw.text((level_x + 4, level_y + 4), fortune_level, fill=(0, 0, 0, 128), font=font_large)
+        draw.text((level_x, level_y), fortune_level, fill=fortune_color, font=font_large)
+        
+        desc_y = content_start_y + 180
+        draw.text((50, desc_y), f"「{fortune['desc']}」", fill=(255, 255, 255), font=font_medium)
+        
+        bar_y = desc_y + 80
+        bar_width = 400
+        bar_height = 30
+        bar_x = 50
+        
+        draw.text((bar_x, bar_y), f"幸运指数：{luck_value}%", fill=(200, 200, 200), font=font_small)
+        
+        bar_bg_y = bar_y + 55
+        draw.rounded_rectangle([(bar_x, bar_bg_y), (bar_x + bar_width, bar_bg_y + bar_height)], 
+                               radius=bar_height // 2, fill=(80, 80, 80))
+        
+        progress_width = int(bar_width * luck_value / 100)
+        if progress_width > 0:
+            draw.rounded_rectangle([(bar_x, bar_bg_y), (bar_x + progress_width, bar_bg_y + bar_height)], 
+                                   radius=bar_height // 2, fill=fortune_color)
+        
+        tips_y = bar_bg_y + 55
+        lucky_color_hex = lucky_color['hex'].upper()
+        lucky_color_name = lucky_color['name']
+        color_text = f"幸运色：{lucky_color_name}({lucky_color_hex})"
+        
+        color_block_size = 36
+        color_block_x = 50
+        color_block_y = tips_y
+        
+        draw.rounded_rectangle(
+            [(color_block_x, color_block_y), 
+             (color_block_x + color_block_size, color_block_y + color_block_size)],
+            radius=8,
+            fill=tuple(lucky_color['rgb'])  # 使用RGB元组
+        )
+
+        text_x = color_block_x + color_block_size + 10
+        draw.text((text_x, tips_y), color_text, fill=(180, 180, 180), font=font_small)
+        
+        lucky_number_text = f"|  幸运数字：{lucky_number}"
+        lucky_number_x = text_x + draw.textlength(color_text, font=font_small) + 10
+        draw.text((lucky_number_x, tips_y), lucky_number_text, 
+                 fill=(180, 180, 180), font=font_small)
+        
+        draw.text((50, tips_y + 55), advice, fill=(180, 180, 180), font=font_small)
+        
+        footer_text = "仅供娱乐 · 相信科学 · 请勿迷信"
+        bbox = draw.textbbox((0, 0), footer_text, font=font_tiny)
+        footer_width = bbox[2] - bbox[0]
+        footer_x = (target_width - footer_width) // 2
+        draw.text((footer_x, target_height - 50), footer_text, fill=(120, 120, 120), font=font_tiny)
+        
+        return background.convert('RGB')
+    
+    @filter.command("jrys", alias=["今日运势", "运势"])
+    async def fortune_command(self, event: AstrMessageEvent):
+        """
+        /jrys, /今日运势, /运势 - 获取今日运势图片
+        """
+        user_id = event.get_sender_id()
+        user_name = event.get_sender_name()
+        
+        try:
+            bg_url = self._get_random_background_url()
+            logger.info(f"选取背景图片URL: {bg_url}")
+            if not bg_url:
+                yield event.plain_result("背景图片加载失败，请稍后再试~")
+                return
+            
+            background = await self._download_image(bg_url)
+            if not background:
+                yield event.plain_result("背景图片下载失败，请稍后再试~")
+                return
+            
+            self.user_last_backgrounds[user_id] = background.copy()
+            
+            avatar_url = await self._get_avatar_url(event)
+            avatar = await self._download_image(avatar_url, timeout=10)
+            
+            fortune_data = self._get_fortune_for_user(user_id)
+            
+            result_image = self._create_fortune_image(background, avatar, user_name, fortune_data)
+            
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                result_image.save(f, format="JPEG", quality=90)
+                temp_path = f.name
+            
+            yield event.image_result(temp_path)
+            
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+            
+        except Exception as e:
+            logger.error(f"生成运势图片失败: {e}")
+            yield event.plain_result(f"生成失败: {e}")
+    
+    @filter.command("jrys_last")
+    async def fortune_last_command(self, event: AstrMessageEvent):
+        """
+        /jrys_last - 获取上一次今日运势的原始背景图片（无运势信息）
+        """
+        user_id = event.get_sender_id()
+        
+        if user_id not in self.user_last_backgrounds:
+            yield event.plain_result("你还没有生成过今日运势，请先使用 /jrys 生成一次~")
+            return
+        
+        try:
+            background = self.user_last_backgrounds[user_id]
+            
+            target_width = 800
+            target_height = 1200
+            
+            bg_ratio = background.width / background.height
+            target_ratio = target_width / target_height
+            
+            if bg_ratio > target_ratio:
+                new_width = int(background.height * target_ratio)
+                left = (background.width - new_width) // 2
+                background = background.crop((left, 0, left + new_width, background.height))
+            else:
+                new_height = int(background.width / target_ratio)
+                top = (background.height - new_height) // 2
+                background = background.crop((0, top, background.width, top + new_height))
+            
+            result_image = background.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            
+            if result_image.mode == 'RGBA':
+                result_image = result_image.convert('RGB')
+            
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                result_image.save(f, format="JPEG", quality=95)
+                temp_path = f.name
+            
+            yield event.image_result(temp_path)
+            
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+                
+        except Exception as e:
+            logger.error(f"获取上次背景图片失败: {e}")
+            yield event.plain_result(f"获取失败: {e}")
