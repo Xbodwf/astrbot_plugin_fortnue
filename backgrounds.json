@@ -782,7 +782,8 @@
         "token": "data.url",
         "headers": {
             "Accept": "application/json"
-        }
+        },
+        "addition": "pixiv {data.pid}"
     },
     "sretna_pe": {
         "type": "api",
