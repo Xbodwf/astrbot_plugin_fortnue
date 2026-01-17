@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.28.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.28.1")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -312,6 +312,7 @@ class FortunePlugin(Star):
     
     async def _download_image(self, url: str, timeout: int = 15, headers: dict | None = None) -> Image.Image:
         """异步下载图片"""
+        logger.info(f"正在下载图片: {url}")
         base_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
