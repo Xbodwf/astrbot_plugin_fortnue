@@ -10,6 +10,12 @@
         "hint": "单位：秒，下载背景图片的最大等待时间",
         "default": 30.0
       },
+      "proxy": {
+        "description": "网络代理",
+        "type": "string",
+        "hint": "网络代理地址，例如 http://127.0.0.1:7890，留空则不使用代理",
+        "default": ""
+      },
       "avatar_size": {
         "description": "头像大小",
         "type": "int",

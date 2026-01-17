@@ -774,7 +774,7 @@
         "method": "get",
         "expected": "image"
     },
-    "pixiv": {
+    "sexphoto": {
         "type": "api",
         "url": "https://sex.nyan.run/api/v2/",
         "method": "get",
@@ -798,5 +798,17 @@
         "url": "https://t.mwm.moe/mp",
         "method": "get",
         "expected": "image"
+    },
+    "pixiv": {
+        "type": "api",
+        "url": "https://api.mossia.top/duckMo",
+        "method": "get",
+        "expected": "url",
+        "token": "data.urlsList.0.url",
+        "headers": {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
+        },
+        "addition": "pid {data.pid}"
     }
 }

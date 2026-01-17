@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.22.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.24.0")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -42,6 +42,13 @@ class FortunePlugin(Star):
         self.backgrounds_data = self._load_backgrounds()
         self.user_last_backgrounds = {}
         self.user_fortune_data = self._load_yunshi_data()
+        
+    def _get_proxy(self) -> str | None:
+        """从配置获取代理地址"""
+        if hasattr(self, "config") and self.config:
+            proxy = self.config.get("fortune_config", {}).get("proxy")
+            return proxy if proxy else None
+        return None
         
     def _load_backgrounds(self) -> dict:
         """加载背景图片配置"""
@@ -138,7 +145,15 @@ class FortunePlugin(Star):
             if isinstance(cur, list):
                 if len(cur) == 0:
                     return None
+                # 支持数字索引
+                if p.isdigit():
+                    idx = int(p)
+                    if 0 <= idx < len(cur):
+                        cur = cur[idx]
+                        continue # 消耗掉该 part，进入下一个
+                # 兼容原有的随机选择逻辑
                 cur = random.choice(cur)
+            
             if isinstance(cur, dict):
                 if p in cur:
                     cur = cur[p]
@@ -158,9 +173,13 @@ class FortunePlugin(Star):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         req_headers = {**base_headers, **headers} if isinstance(headers, dict) else base_headers
+        proxy = self._get_proxy()
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.request(method.upper(), url, timeout=aiohttp.ClientTimeout(total=timeout), headers=req_headers) as resp:
+                async with session.request(method.upper(), url, 
+                                         timeout=aiohttp.ClientTimeout(total=timeout), 
+                                         headers=req_headers,
+                                         proxy=proxy) as resp:
                     if resp.status != 200:
                         return "", ""
                     if expected == "image":
@@ -205,9 +224,10 @@ class FortunePlugin(Star):
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
+            proxy = self._get_proxy()
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout), 
-                                       headers=headers) as resp:
+                                       headers=headers, proxy=proxy) as resp:
                     if resp.status == 200:
                         data = await resp.read()
                         return Image.open(BytesIO(data))
