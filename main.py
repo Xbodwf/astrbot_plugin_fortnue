@@ -97,6 +97,8 @@ class FortunePlugin(Star):
                             return random.choice(items)
                     if t == "api":
                         return chosen
+                    if t == "object":
+                        return chosen
             return "" # 指定图源不存在或无效
 
         # 未指定图源，随机选择
@@ -114,6 +116,9 @@ class FortunePlugin(Star):
                         source_keys.append(k)
                 elif t == "api":
                     if isinstance(v.get("url"), str) and v.get("url"):
+                        source_keys.append(k)
+                elif t == "object":
+                    if isinstance(v.get("sources"), list) and len(v.get("sources")) > 0:
                         source_keys.append(k)
         
         if not source_keys:
@@ -133,6 +138,8 @@ class FortunePlugin(Star):
                 if isinstance(items, list) and len(items) > 0:
                     return random.choice(items)
             if t == "api":
+                return chosen
+            if t == "object":
                 return chosen
         return ""
     
