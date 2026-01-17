@@ -786,14 +786,110 @@
         "method": "get",
         "expected": "image"
     },
+    "pixiv_links": {
+        "type": "object",
+        "sources": [
+            {
+                "url": "https://o.edcms.pw/img-master/img/2026/01/15/00/00/05/139940700_p0_master1200.jpg",
+                "pid": "139940700"
+            },
+            {
+                "url": "https://o.edcms.pw/img-master/img/2026/01/15/20/01/59/139967678_p0_master1200.jpg",
+                "pid": "139967678"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/15/01/02/32/139943566_p0_master1200.jpg",
+                "pid": "139943566"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/16/01/59/43/139982840_p0_master1200.jpg",
+                "pid": "139982840"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/15/19/42/33/139966771_p0_master1200.jpg",
+                "pid": "139966771"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/15/00/30/01/139942419_p0_master1200.jpg",
+                "pid": "139942419"
+            },
+            {
+                "url": "https://o.edcms.pw/img-master/img/2026/01/15/14/54/47/139958591_p0_master1200.jpg",
+                "pid": "139958591"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2025/12/23/12/55/45/138936740_p0_master1200.jpg",
+                "pid": "138936740"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2025/10/25/13/00/03/136673706_p0_master1200.jpg",
+                "pid": "136673706"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/16/00/00/17/139978455_p0_master1200.jpg",
+                "pid": "139978455"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/15/14/00/19/139957594_p0_master1200.jpg",
+                "pid": "139957594"
+            },
+            {
+                "url": "https://o.edcms.pw/img-master/img/2026/01/16/02/14/07/139983223_p0_master1200.jpg",
+                "pid": "139983223"
+            },
+            {
+                "url": "https://o.edcms.pw/img-master/img/2025/10/25/13/00/03/136673706_p0_master1200.jpg",
+                "pid": "139978457"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/15/12/53/22/139956192_p0_master1200.jpg",
+                "pid": "139956192"
+            },
+            {
+                "url": "https://o.edcms.pw/img-master/img/2021/09/28/02/48/48/93070563_p0_master1200.jpg",
+                "pid": "93070563"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/17/18/00/04/140043111_p0_master1200.jpg",
+                "pid": "140043111"
+            },
+            {
+                "url": "https://o.edcms.pw/img-master/img/2026/01/17/16/00/08/140039460_p0_master1200.jpg",
+                "pid": "140039460"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/17/21/21/39/140051782_p0_master1200.jpg",
+                "pid": "140051782"
+            },
+            {
+                "url": "https://o.edcms.pw/img-master/img/2026/01/17/19/26/06/140046553_p0_master1200.jpg",
+                "pid": "140046553"
+            },
+            {
+                "url":"https://o.edcms.pw/img-master/img/2026/01/17/14/42/28/140037435_p0_master1200.jpg",
+                "pid": "140037435"
+            },
+            {
+                "url": "https://o.edcms.pw/img-master/img/2026/01/17/13/55/46/140036234_p0_master1200.jpg",
+                "pid": "140036234"
+            }
+
+        ],
+        "img_headers": {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
+            "Referer": "https://pixivic.com/"
+        },
+        "addition": "pid {pid}"
+    },
     "pixiv": {
         "type": "api",
-        "url": "https://api.mossia.top/duckMo",
+        "url": "https://sex.nyan.run/api/v2/",
         "method": "get",
         "expected": "url",
-        "token": "data.urlsList.0.url",
+        "token": "data.url",
         "replacement": {
-            "pattern": "i\\.pixiv\\.re",
+            "pattern": "sex\\.nyan\\.run",
             "replace": "o.edcms.pw"
         },
         "headers": {

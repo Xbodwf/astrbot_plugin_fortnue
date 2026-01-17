@@ -1,5 +1,10 @@
 # 变更日志
 
+## 1.28.0
+- 新增 `object` 类型图源支持，允许从静态列表 `sources` 中随机选取图片。
+- `object` 类型支持 `img_headers` 和基于 `sources` 对象的 `addition` 模板变量。
+- 重构了背景图获取逻辑，统一了 `api`、`object` 和静态图源的处理流程。
+
 ## 1.27.0
 - 支持在 `backgrounds.json` 中为 API 类型背景源设置独立的 `img_headers`，用于下载图片时的请求头。
 - 优化了图片下载逻辑，支持自定义请求头合并。

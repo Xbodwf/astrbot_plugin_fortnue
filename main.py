@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.27.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.28.0")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -241,6 +241,67 @@ class FortunePlugin(Star):
         except Exception as e:
             logger.error(f"解析API图片失败 {url}: {e}")
             raise e
+
+    async def _resolve_object_image(self, spec: dict):
+        """处理 type: object 的图源"""
+        sources = spec.get("sources")
+        if not sources or not isinstance(sources, list):
+            raise Exception("object 类型图源必须包含 sources 列表")
+        
+        source = random.choice(sources)
+        img_headers = spec.get("img_headers")
+        addition_tmpl = spec.get("addition")
+        
+        img_url = ""
+        addition_vars = {}
+        
+        if isinstance(source, str):
+            img_url = source
+        elif isinstance(source, dict):
+            img_url = source.get("url", "")
+            addition_vars = source
+        else:
+            raise Exception(f"不支持的 source 类型: {type(source)}")
+        
+        if not img_url:
+            raise Exception("无法从 source 中获取图片 URL")
+            
+        addition_text = ""
+        if addition_tmpl:
+            import re
+            def _repl(match):
+                key = match.group(1)
+                return str(addition_vars.get(key, match.group(0)))
+            addition_text = re.sub(r"\{(.*?)\}", _repl, addition_tmpl)
+            
+        return img_url, addition_text, img_headers
+
+    async def _get_background_and_addition(self, bg_spec: str | dict) -> tuple[Image.Image, str]:
+        """统一获取背景图片和附加文本的逻辑"""
+        background = None
+        addition_text = ""
+        
+        if isinstance(bg_spec, dict):
+            spec_type = bg_spec.get("type", "api")
+            if spec_type == "object":
+                img_url, addition_text, img_headers = await self._resolve_object_image(bg_spec)
+                background = await self._download_image(img_url, headers=img_headers)
+            else: # 默认为 api
+                resolved, addition_text, img_headers = await self._resolve_api_image_url(bg_spec)
+                if isinstance(resolved, Image.Image):
+                    background = resolved
+                else:
+                    bg_url = resolved
+                    logger.info(f"选取背景图片URL: {bg_url}")
+                    background = await self._download_image(bg_url, headers=img_headers)
+        else:
+            bg_url = bg_spec
+            if bg_url.startswith("http"):
+                background = await self._download_image(bg_url)
+            else:
+                background = Image.open(bg_url)
+                
+        return background, addition_text
     
     async def _download_image(self, url: str, timeout: int = 15, headers: dict | None = None) -> Image.Image:
         """异步下载图片"""
@@ -756,18 +817,11 @@ class FortunePlugin(Star):
                     yield event.plain_result("暂无背景图源配置，请检查 backgrounds.json~")
                 return
 
-            if isinstance(bg_spec, dict):
-                resolved, _, img_headers = await self._resolve_api_image_url(bg_spec)
-                if isinstance(resolved, Image.Image):
-                    background = resolved
-                else:
-                    bg_url = resolved
-                    logger.info(f"选取背景图片URL: {bg_url}")
-                    background = await self._download_image(bg_url, headers=img_headers)
-            else:
-                bg_url = bg_spec
-                logger.info(f"选取背景图片URL: {bg_url}")
-                background = await self._download_image(bg_url)
+            # 获取背景图和附加文本
+            background, _ = await self._get_background_and_addition(bg_spec)
+            
+            if not background:
+                raise Exception("无法加载背景图片")
             
             result_image = self._process_background(background)
             
@@ -800,19 +854,11 @@ class FortunePlugin(Star):
                     yield event.plain_result("暂无背景图源配置，请检查 backgrounds.json~")
                 return
 
-            addition_text = ""
-            if isinstance(bg_spec, dict):
-                resolved, addition_text, img_headers = await self._resolve_api_image_url(bg_spec)
-                if isinstance(resolved, Image.Image):
-                    background = resolved
-                else:
-                    bg_url = resolved
-                    logger.info(f"选取背景图片URL: {bg_url}")
-                    background = await self._download_image(bg_url, headers=img_headers)
-            else:
-                bg_url = bg_spec
-                logger.info(f"选取背景图片URL: {bg_url}")
-                background = await self._download_image(bg_url)
+            # 获取背景图和附加文本
+            background, addition_text = await self._get_background_and_addition(bg_spec)
+            
+            if not background:
+                raise Exception("无法加载背景图片")
             
             self.user_last_backgrounds[user_id] = background.copy()
             
