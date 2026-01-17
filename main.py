@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.26.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.27.0")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -168,6 +168,7 @@ class FortunePlugin(Star):
         method = str(spec.get("method", "get")).lower()
         expected = str(spec.get("expected", "url")).lower()
         headers = spec.get("headers") or {}
+        img_headers = spec.get("img_headers") # 新增：图片下载请求头
         addition_tmpl = spec.get("addition")
         base_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -193,7 +194,7 @@ class FortunePlugin(Star):
                         addition_text = ""
                         if addition_tmpl:
                             addition_text = addition_tmpl 
-                        return img, addition_text
+                        return img, addition_text, img_headers
                     
                     try:
                         js = await resp.json()
@@ -234,23 +235,24 @@ class FortunePlugin(Star):
                             return str(v) if v is not None else match.group(0)
                         addition_text = re.sub(r"\{(.*?)\}", _repl, addition_tmpl)
                     
-                    return img_url, addition_text
+                    return img_url, addition_text, img_headers
         except asyncio.TimeoutError:
             raise Exception("API请求超时")
         except Exception as e:
             logger.error(f"解析API图片失败 {url}: {e}")
             raise e
     
-    async def _download_image(self, url: str, timeout: int = 15) -> Image.Image:
+    async def _download_image(self, url: str, timeout: int = 15, headers: dict | None = None) -> Image.Image:
         """异步下载图片"""
-        headers = {
+        base_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
+        req_headers = {**base_headers, **headers} if isinstance(headers, dict) else base_headers
         proxy = self._get_proxy()
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout), 
-                                       headers=headers, proxy=proxy) as resp:
+                                       headers=req_headers, proxy=proxy) as resp:
                     if resp.status != 200:
                         raise Exception(f"HTTP {resp.status} {resp.reason}")
                     data = await resp.read()
@@ -755,13 +757,13 @@ class FortunePlugin(Star):
                 return
 
             if isinstance(bg_spec, dict):
-                resolved, _ = await self._resolve_api_image_url(bg_spec)
+                resolved, _, img_headers = await self._resolve_api_image_url(bg_spec)
                 if isinstance(resolved, Image.Image):
                     background = resolved
                 else:
                     bg_url = resolved
                     logger.info(f"选取背景图片URL: {bg_url}")
-                    background = await self._download_image(bg_url)
+                    background = await self._download_image(bg_url, headers=img_headers)
             else:
                 bg_url = bg_spec
                 logger.info(f"选取背景图片URL: {bg_url}")
@@ -800,13 +802,13 @@ class FortunePlugin(Star):
 
             addition_text = ""
             if isinstance(bg_spec, dict):
-                resolved, addition_text = await self._resolve_api_image_url(bg_spec)
+                resolved, addition_text, img_headers = await self._resolve_api_image_url(bg_spec)
                 if isinstance(resolved, Image.Image):
                     background = resolved
                 else:
                     bg_url = resolved
                     logger.info(f"选取背景图片URL: {bg_url}")
-                    background = await self._download_image(bg_url)
+                    background = await self._download_image(bg_url, headers=img_headers)
             else:
                 bg_url = bg_spec
                 logger.info(f"选取背景图片URL: {bg_url}")
