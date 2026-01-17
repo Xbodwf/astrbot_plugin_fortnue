@@ -1,5 +1,31 @@
 # 变更日志
 
+## 1.18.0~1.26.0更新日志
+1.18.0以后，插件本身可以更自由地添加图源。如何添加图源，修改插件目录的`backgrounds.json`即可。
+并且我们提供了代理 Token等方便的功能。
+
+示例图源: 鸭子API (大多来自于Pixiv,以下称作Pixiv)(公益API 请勿滥用)
+若为Pixiv图源的图片,今日运势下方会显示图片的pid.
+```jsonc
+"pixiv": {
+        "type": "api",
+        "url": "https://api.mossia.top/duckMo",
+        "method": "get",
+        "expected": "url",
+        "token": "data.urlsList.0.url",
+        "replacement": {
+            "pattern": "i\\.pixiv\\.re",
+            "replace": "i.yuki.sh"
+        },
+        "headers": {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
+            "referer": "https://www.pixiv.net/"
+        },
+        "addition": "pid {data.pid}" /*可选添加字符串*/
+    }
+```
+
 ## 1.26.0
 
 ### 新增
