@@ -768,7 +768,13 @@
         "method": "get",
         "expected": "image"
     },
-    "sexphoto": {
+    "alcy_moemp": {
+        "type": "api",
+        "url": "https://t.alcy.cc/moemp",
+        "method": "get",
+        "expected": "image"
+    },
+    "pixiv": {
         "type": "api",
         "url": "https://sex.nyan.run/api/v2/",
         "method": "get",

@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.18.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.21.0")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -70,9 +70,29 @@ class FortunePlugin(Star):
         except Exception as e:
             logger.error(f"保存运势数据失败: {e}")
     
-    def _get_random_background_url(self) -> str | dict:
+    def _get_background_spec(self, source_name: str = None) -> str | dict:
         if not self.backgrounds_data:
             return ""
+        
+        # 如果指定了图源名称
+        if source_name:
+            if source_name in self.backgrounds_data:
+                chosen = self.backgrounds_data[source_name]
+                if isinstance(chosen, list) and len(chosen) > 0:
+                    return random.choice(chosen)
+                if isinstance(chosen, str) and chosen:
+                    return chosen
+                if isinstance(chosen, dict):
+                    t = chosen.get("type")
+                    if t == "array":
+                        items = chosen.get("items") or chosen.get("urls") or []
+                        if isinstance(items, list) and len(items) > 0:
+                            return random.choice(items)
+                    if t == "api":
+                        return chosen
+            return "" # 指定图源不存在或无效
+
+        # 未指定图源，随机选择
         source_keys = []
         for k, v in self.backgrounds_data.items():
             if isinstance(v, list) and len(v) > 0:
@@ -88,10 +108,13 @@ class FortunePlugin(Star):
                 elif t == "api":
                     if isinstance(v.get("url"), str) and v.get("url"):
                         source_keys.append(k)
+        
         if not source_keys:
             return ""
+            
         chosen_key = random.choice(source_keys)
         chosen = self.backgrounds_data.get(chosen_key)
+        
         if isinstance(chosen, list) and len(chosen) > 0:
             return random.choice(chosen)
         if isinstance(chosen, str) and chosen:
@@ -104,20 +127,6 @@ class FortunePlugin(Star):
                     return random.choice(items)
             if t == "api":
                 return chosen
-        for k, v in self.backgrounds_data.items():
-            if isinstance(v, list) and len(v) > 0:
-                return random.choice(v)
-            if isinstance(v, str) and v:
-                return v
-            if isinstance(v, dict):
-                t = v.get("type")
-                if t == "array":
-                    items = v.get("items") or v.get("urls") or []
-                    if isinstance(items, list) and len(items) > 0:
-                        return random.choice(items)
-                if t == "api":
-                    if isinstance(v.get("url"), str) and v.get("url"):
-                        return v
         return ""
     
     def _extract_token_value(self, obj, token: str):
@@ -144,6 +153,7 @@ class FortunePlugin(Star):
         method = str(spec.get("method", "get")).lower()
         expected = str(spec.get("expected", "url")).lower()
         headers = spec.get("headers") or {}
+        addition_tmpl = spec.get("addition")
         base_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
@@ -152,22 +162,42 @@ class FortunePlugin(Star):
             async with aiohttp.ClientSession() as session:
                 async with session.request(method.upper(), url, timeout=aiohttp.ClientTimeout(total=timeout), headers=req_headers) as resp:
                     if resp.status != 200:
-                        return ""
+                        return "", ""
                     if expected == "image":
                         data = await resp.read()
-                        return Image.open(BytesIO(data))
+                        img = Image.open(BytesIO(data))
+                        addition_text = ""
+                        if addition_tmpl:
+                            # For image expected, we don't have JSON data to interpolate, 
+                            # but we still support static addition or simple templates if needed.
+                            # Usually image APIs don't return metadata in body.
+                            addition_text = addition_tmpl 
+                        return img, addition_text
+                    
                     js = await resp.json()
                     token = spec.get("token") or ""
+                    img_url = url
                     if isinstance(js, dict) and token:
                         val = self._extract_token_value(js, token)
                         if isinstance(val, str):
-                            return val
-                        if isinstance(val, list) and len(val) > 0 and isinstance(val[0], str):
-                            return random.choice(val)
-                    return url
+                            img_url = val
+                        elif isinstance(val, list) and len(val) > 0 and isinstance(val[0], str):
+                            img_url = random.choice(val)
+                    
+                    addition_text = ""
+                    if addition_tmpl and isinstance(js, dict):
+                        # Simple template parsing: {data.pid} -> js['data']['pid']
+                        import re
+                        def _repl(match):
+                            path = match.group(1)
+                            v = self._extract_token_value(js, path)
+                            return str(v) if v is not None else match.group(0)
+                        addition_text = re.sub(r"\{(.*?)\}", _repl, addition_tmpl)
+                    
+                    return img_url, addition_text
         except Exception as e:
             logger.error(f"解析API图片失败 {url}: {e}")
-            return ""
+            return "", ""
     
     async def _download_image(self, url: str, timeout: int = 15) -> Image.Image | None:
         """异步下载图片"""
@@ -491,7 +521,7 @@ class FortunePlugin(Star):
         return result_data
     
     def _create_fortune_image(self, background: Image.Image, avatar: Image.Image | None,
-                              user_name: str, fortune_data: dict) -> Image.Image:
+                              user_name: str, fortune_data: dict, addition_text: str = "") -> Image.Image:
         """创建运势图片"""
         target_width = 800
         target_height = 1200
@@ -630,6 +660,9 @@ class FortunePlugin(Star):
         draw.text((50, tips_y + 55), advice, fill=(180, 180, 180), font=font_small)
         
         footer_text = "仅供娱乐 · 相信科学 · 请勿迷信"
+        if addition_text:
+            footer_text = f"{addition_text} | {footer_text}"
+            
         bbox = draw.textbbox((0, 0), footer_text, font=font_tiny)
         footer_width = bbox[2] - bbox[0]
         footer_x = (target_width - footer_width) // 2
@@ -637,18 +670,95 @@ class FortunePlugin(Star):
         
         return background.convert('RGB')
     
-    @filter.command("jrys", alias=["今日运势", "运势"])
-    async def fortune_command(self, event: AstrMessageEvent):
-        """
-        /jrys, /今日运势, /运势 - 获取今日运势图片
-        """
+    def _process_background(self, bg: Image.Image) -> Image.Image:
+        """处理背景图片（裁剪和缩放）"""
+        target_width = 800
+        target_height = 1200
+        
+        bg_ratio = bg.width / bg.height
+        target_ratio = target_width / target_height
+        
+        if bg_ratio > target_ratio:
+            new_width = int(bg.height * target_ratio)
+            left = (bg.width - new_width) // 2
+            bg = bg.crop((left, 0, left + new_width, bg.height))
+        else:
+            new_height = int(bg.width / target_ratio)
+            top = (bg.height - new_height) // 2
+            bg = bg.crop((0, top, bg.width, top + new_height))
+        
+        result_image = bg.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        
+        if result_image.mode == 'RGBA':
+            result_image = result_image.convert('RGB')
+        return result_image
+
+    async def _handle_none_generation(self, event: AstrMessageEvent, source_name: str = None):
+        """处理纯背景图片获取逻辑"""
+        try:
+            bg_spec = self._get_background_spec(source_name)
+            if not bg_spec:
+                if source_name:
+                    yield event.plain_result(f"未找到指定的图源: {source_name}")
+                else:
+                    yield event.plain_result("暂无背景图源配置，请检查 backgrounds.json~")
+                return
+
+            if isinstance(bg_spec, dict):
+                resolved, _ = await self._resolve_api_image_url(bg_spec)
+                if isinstance(resolved, Image.Image):
+                    background = resolved
+                else:
+                    if not resolved:
+                        yield event.plain_result("背景图片解析失败，请稍后再试~")
+                        return
+                    background = await self._download_image(resolved)
+            else:
+                if not bg_spec:
+                    yield event.plain_result("背景图片下载失败，请稍后再试~")
+                    return
+                background = await self._download_image(bg_spec)
+            
+            if not background:
+                yield event.plain_result("背景图片加载失败，请稍后再试~")
+                return
+            
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result_image = await loop.run_in_executor(executor, self._process_background, background)
+            
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                result_image.save(f, format="JPEG", quality=95)
+                temp_path = f.name
+            
+            try:
+                yield event.image_result(temp_path)
+            finally:
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"获取背景图片失败: {e}")
+            yield event.plain_result(f"获取失败: {e}")
+
+    async def _handle_fortune_generation(self, event: AstrMessageEvent, source_name: str = None):
         user_id = event.get_sender_id()
         user_name = event.get_sender_name()
         
         try:
-            bg_spec = self._get_random_background_url()
+            bg_spec = self._get_background_spec(source_name)
+            if not bg_spec:
+                if source_name:
+                    yield event.plain_result(f"未找到指定的图源: {source_name}")
+                else:
+                    yield event.plain_result("暂无背景图源配置，请检查 backgrounds.json~")
+                return
+
+            addition_text = ""
             if isinstance(bg_spec, dict):
-                resolved = await self._resolve_api_image_url(bg_spec)
+                resolved, addition_text = await self._resolve_api_image_url(bg_spec)
                 if isinstance(resolved, Image.Image):
                     background = resolved
                     bg_url = "(api-image)"
@@ -656,18 +766,19 @@ class FortunePlugin(Star):
                     bg_url = resolved
                     logger.info(f"选取背景图片URL: {bg_url}")
                     if not bg_url:
-                        yield event.plain_result("背景图片加载失败，请稍后再试~")
+                        yield event.plain_result("背景图片解析失败，请稍后再试~")
                         return
                     background = await self._download_image(bg_url)
             else:
                 bg_url = bg_spec
                 logger.info(f"选取背景图片URL: {bg_url}")
                 if not bg_url:
-                    yield event.plain_result("背景图片加载失败，请稍后再试~")
+                    yield event.plain_result("背景图片下载失败，请稍后再试~")
                     return
                 background = await self._download_image(bg_url)
+            
             if not background:
-                yield event.plain_result("背景图片下载失败，请稍后再试~")
+                yield event.plain_result("背景图片加载失败，请稍后再试~")
                 return
             
             self.user_last_backgrounds[user_id] = background.copy()
@@ -679,7 +790,7 @@ class FortunePlugin(Star):
             
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as executor:
-                result_image = await loop.run_in_executor(executor, self._create_fortune_image, background, avatar, user_name, fortune_data)
+                result_image = await loop.run_in_executor(executor, self._create_fortune_image, background, avatar, user_name, fortune_data, addition_text)
             
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
                 result_image.save(f, format="JPEG", quality=90)
@@ -696,46 +807,33 @@ class FortunePlugin(Star):
         except Exception as e:
             logger.error(f"生成运势图片失败: {e}")
             yield event.plain_result(f"生成失败: {e}")
-    
-    @filter.command("jrys_last")
-    async def fortune_last_command(self, event: AstrMessageEvent):
-        """
-        /jrys_last - 获取上一次今日运势的原始背景图片（无运势信息）
-        """
+
+    @filter.command_group("jrys", alias=["今日运势", "运势"])
+    async def jrys(self, event: AstrMessageEvent):
+        """今日运势指令组"""
+        # 直接使用 /jrys 时触发
+        async for res in self._handle_fortune_generation(event):
+            yield res
+
+    @jrys.command("source")
+    async def source(self, event: AstrMessageEvent, source_name: str):
+        """从指定的图源加载图片生成今日运势"""
+        async for res in self._handle_fortune_generation(event, source_name=source_name):
+            yield res
+
+    @jrys.command("last")
+    async def last(self, event: AstrMessageEvent):
+        """获取上一次今日运势的原始背景图片（无运势信息）"""
         user_id = event.get_sender_id()
-        
         if user_id not in self.user_last_backgrounds:
             yield event.plain_result("你还没有生成过今日运势，请先使用 /jrys 生成一次~")
             return
-        
+            
         try:
             background = self.user_last_backgrounds[user_id]
-            
-            def process_background(bg):
-                target_width = 800
-                target_height = 1200
-                
-                bg_ratio = bg.width / bg.height
-                target_ratio = target_width / target_height
-                
-                if bg_ratio > target_ratio:
-                    new_width = int(bg.height * target_ratio)
-                    left = (bg.width - new_width) // 2
-                    bg = bg.crop((left, 0, left + new_width, bg.height))
-                else:
-                    new_height = int(bg.width / target_ratio)
-                    top = (bg.height - new_height) // 2
-                    bg = bg.crop((0, top, bg.width, top + new_height))
-                
-                result_image = bg.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                
-                if result_image.mode == 'RGBA':
-                    result_image = result_image.convert('RGB')
-                return result_image
-            
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as executor:
-                result_image = await loop.run_in_executor(executor, process_background, background)
+                result_image = await loop.run_in_executor(executor, self._process_background, background)
             
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
                 result_image.save(f, format="JPEG", quality=95)
@@ -748,7 +846,18 @@ class FortunePlugin(Star):
                     os.remove(temp_path)
                 except:
                     pass
-                
         except Exception as e:
             logger.error(f"获取上次背景图片失败: {e}")
             yield event.plain_result(f"获取失败: {e}")
+
+    @jrys.group("none")
+    async def none(self, event: AstrMessageEvent):
+        """单独从图源中刷图（无运势信息）"""
+        async for res in self._handle_none_generation(event):
+            yield res
+
+    @none.command("source")
+    async def none_source(self, event: AstrMessageEvent, source_name: str):
+        """从指定的图源单独刷图（无运势信息）"""
+        async for res in self._handle_none_generation(event, source_name=source_name):
+            yield res
