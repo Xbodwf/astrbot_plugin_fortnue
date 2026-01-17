@@ -8,3 +8,5 @@
 /jrys
 ```
 均可。
+
+![今日运势](_README.Assets/p1.png)
