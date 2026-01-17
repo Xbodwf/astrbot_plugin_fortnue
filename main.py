@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.24.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.25.0")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -181,19 +181,25 @@ class FortunePlugin(Star):
                                          headers=req_headers,
                                          proxy=proxy) as resp:
                     if resp.status != 200:
-                        return "", ""
+                        raise Exception(f"API请求失败 (HTTP {resp.status} {resp.reason})")
+                    
                     if expected == "image":
                         data = await resp.read()
-                        img = Image.open(BytesIO(data))
+                        try:
+                            img = Image.open(BytesIO(data))
+                        except Exception as e:
+                            raise Exception(f"API返回的图片解析失败: {e}")
+                        
                         addition_text = ""
                         if addition_tmpl:
-                            # For image expected, we don't have JSON data to interpolate, 
-                            # but we still support static addition or simple templates if needed.
-                            # Usually image APIs don't return metadata in body.
                             addition_text = addition_tmpl 
                         return img, addition_text
                     
-                    js = await resp.json()
+                    try:
+                        js = await resp.json()
+                    except Exception as e:
+                        raise Exception(f"API返回格式非JSON: {e}")
+                    
                     token = spec.get("token") or ""
                     img_url = url
                     if isinstance(js, dict) and token:
@@ -202,6 +208,8 @@ class FortunePlugin(Star):
                             img_url = val
                         elif isinstance(val, list) and len(val) > 0 and isinstance(val[0], str):
                             img_url = random.choice(val)
+                        else:
+                            raise Exception(f"Token '{token}' 未能解析到有效的图片URL路径")
                     
                     addition_text = ""
                     if addition_tmpl and isinstance(js, dict):
@@ -214,26 +222,35 @@ class FortunePlugin(Star):
                         addition_text = re.sub(r"\{(.*?)\}", _repl, addition_tmpl)
                     
                     return img_url, addition_text
+        except asyncio.TimeoutError:
+            raise Exception("API请求超时")
         except Exception as e:
             logger.error(f"解析API图片失败 {url}: {e}")
-            return "", ""
+            raise e
     
-    async def _download_image(self, url: str, timeout: int = 15) -> Image.Image | None:
+    async def _download_image(self, url: str, timeout: int = 15) -> Image.Image:
         """异步下载图片"""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        proxy = self._get_proxy()
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            proxy = self._get_proxy()
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout), 
                                        headers=headers, proxy=proxy) as resp:
-                    if resp.status == 200:
-                        data = await resp.read()
+                    if resp.status != 200:
+                        raise Exception(f"HTTP {resp.status} {resp.reason}")
+                    data = await resp.read()
+                    try:
                         return Image.open(BytesIO(data))
+                    except Exception as e:
+                        raise Exception(f"图片格式解析失败: {e}")
+        except asyncio.TimeoutError:
+            raise Exception("请求超时")
         except Exception as e:
-            logger.error(f"下载图片失败 {url}: {e}")
-        return None
+            if isinstance(e, Image.DecompressionBombError):
+                raise Exception("图片过大，拒绝处理")
+            raise e
     
     async def _get_avatar_url(self, event: AstrMessageEvent) -> str:
         """获取用户头像URL"""
@@ -729,23 +746,15 @@ class FortunePlugin(Star):
                 if isinstance(resolved, Image.Image):
                     background = resolved
                 else:
-                    if not resolved:
-                        yield event.plain_result("背景图片解析失败，请稍后再试~")
-                        return
-                    background = await self._download_image(resolved)
+                    bg_url = resolved
+                    logger.info(f"选取背景图片URL: {bg_url}")
+                    background = await self._download_image(bg_url)
             else:
-                if not bg_spec:
-                    yield event.plain_result("背景图片下载失败，请稍后再试~")
-                    return
-                background = await self._download_image(bg_spec)
+                bg_url = bg_spec
+                logger.info(f"选取背景图片URL: {bg_url}")
+                background = await self._download_image(bg_url)
             
-            if not background:
-                yield event.plain_result("背景图片加载失败，请稍后再试~")
-                return
-            
-            loop = asyncio.get_event_loop()
-            with ThreadPoolExecutor() as executor:
-                result_image = await loop.run_in_executor(executor, self._process_background, background)
+            result_image = self._process_background(background)
             
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
                 result_image.save(f, format="JPEG", quality=95)
@@ -781,30 +790,23 @@ class FortunePlugin(Star):
                 resolved, addition_text = await self._resolve_api_image_url(bg_spec)
                 if isinstance(resolved, Image.Image):
                     background = resolved
-                    bg_url = "(api-image)"
                 else:
                     bg_url = resolved
                     logger.info(f"选取背景图片URL: {bg_url}")
-                    if not bg_url:
-                        yield event.plain_result("背景图片解析失败，请稍后再试~")
-                        return
                     background = await self._download_image(bg_url)
             else:
                 bg_url = bg_spec
                 logger.info(f"选取背景图片URL: {bg_url}")
-                if not bg_url:
-                    yield event.plain_result("背景图片下载失败，请稍后再试~")
-                    return
                 background = await self._download_image(bg_url)
-            
-            if not background:
-                yield event.plain_result("背景图片加载失败，请稍后再试~")
-                return
             
             self.user_last_backgrounds[user_id] = background.copy()
             
             avatar_url = await self._get_avatar_url(event)
-            avatar = await self._download_image(avatar_url, timeout=10)
+            try:
+                avatar = await self._download_image(avatar_url, timeout=10)
+            except Exception as e:
+                logger.warning(f"下载头像失败: {e}，将使用默认空白头像")
+                avatar = Image.new('RGB', (100, 100), (200, 200, 200))
             
             fortune_data = self._get_fortune_for_user(user_id)
             
