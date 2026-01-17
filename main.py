@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.21.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.22.0")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -808,20 +808,24 @@ class FortunePlugin(Star):
             logger.error(f"生成运势图片失败: {e}")
             yield event.plain_result(f"生成失败: {e}")
 
-    @filter.command_group("jrys", alias=["今日运势", "运势"])
-    async def jrys(self, event: AstrMessageEvent):
-        """今日运势指令组"""
-        # 直接使用 /jrys 时触发
+    @filter.command("jrys", alias=["今日运势", "运势"])
+    async def jrys_cmd(self, event: AstrMessageEvent):
+        """生成今日运势图片"""
         async for res in self._handle_fortune_generation(event):
             yield res
 
-    @jrys.command("source")
+    @filter.command_group("jrysl")
+    async def jrysl(self, event: AstrMessageEvent):
+        """今日运势管理指令组"""
+        pass
+
+    @jrysl.command("source")
     async def source(self, event: AstrMessageEvent, source_name: str):
         """从指定的图源加载图片生成今日运势"""
         async for res in self._handle_fortune_generation(event, source_name=source_name):
             yield res
 
-    @jrys.command("last")
+    @jrysl.command("last")
     async def last(self, event: AstrMessageEvent):
         """获取上一次今日运势的原始背景图片（无运势信息）"""
         user_id = event.get_sender_id()
@@ -850,7 +854,7 @@ class FortunePlugin(Star):
             logger.error(f"获取上次背景图片失败: {e}")
             yield event.plain_result(f"获取失败: {e}")
 
-    @jrys.group("none")
+    @jrysl.group("none")
     async def none(self, event: AstrMessageEvent):
         """单独从图源中刷图（无运势信息）"""
         async for res in self._handle_none_generation(event):
