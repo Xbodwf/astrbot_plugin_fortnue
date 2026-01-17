@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.25.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.26.0")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -201,6 +201,7 @@ class FortunePlugin(Star):
                         raise Exception(f"API返回格式非JSON: {e}")
                     
                     token = spec.get("token") or ""
+                    replacement = spec.get("replacement")  # 新增：正则替换规则
                     img_url = url
                     if isinstance(js, dict) and token:
                         val = self._extract_token_value(js, token)
@@ -210,6 +211,18 @@ class FortunePlugin(Star):
                             img_url = random.choice(val)
                         else:
                             raise Exception(f"Token '{token}' 未能解析到有效的图片URL路径")
+                    
+                    # 执行正则替换
+                    if replacement and isinstance(replacement, dict):
+                        import re
+                        pattern = replacement.get("pattern")
+                        repl = replacement.get("replace")
+                        if pattern and repl:
+                            try:
+                                img_url = re.sub(pattern, repl, img_url)
+                                logger.info(f"应用替换规则: {img_url}")
+                            except Exception as e:
+                                logger.error(f"正则替换失败: {e}")
                     
                     addition_text = ""
                     if addition_tmpl and isinstance(js, dict):
