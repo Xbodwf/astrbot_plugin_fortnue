@@ -30,7 +30,7 @@ LUCKY_NUMBERS = [0, 1, 2, 3, 5, 6, 7, 8, 9]
 FESTIVE_MIN_LUCK = 70
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.28.1")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.29.0")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
@@ -905,6 +905,12 @@ class FortunePlugin(Star):
         async for res in self._handle_fortune_generation(event):
             yield res
 
+    @filter.command("jrysn")
+    async def jrysn(self, event: AstrMessageEvent):
+        """随机从图源中获取一张背景图 (无运势信息)"""
+        async for res in self._handle_none_generation(event):
+            yield res
+
     @filter.command_group("jrysl")
     async def jrysl(self, event: AstrMessageEvent):
         """今日运势管理指令组"""
@@ -948,8 +954,7 @@ class FortunePlugin(Star):
     @jrysl.group("none")
     async def none(self, event: AstrMessageEvent):
         """单独从图源中刷图（无运势信息）"""
-        async for res in self._handle_none_generation(event):
-            yield res
+        pass
 
     @none.command("source")
     async def none_source(self, event: AstrMessageEvent, source_name: str):
