@@ -60,6 +60,20 @@
 ```
 
 ### 2. API 图源 (api 类型)
+
+#### 2.1 图片图源
+```json
+"mwm-moe": {
+    "type": "api",
+    "url": "https://t.mwm.moe/mp",
+    "method": "get",
+    "expected": "image" // API返回的内容是直接适合嵌入的图片
+},
+```
+
+#### 2.2 URL图源
+图源本身只返回对应图片的URL(如pixiv类api)
+
 通过请求外部 API 动态获取图片 URL。
 ```json
 "pixiv_api": {
@@ -69,15 +83,15 @@
     "expected": "url",
     "token": "data.image_url", // JSON 解析路径
     "headers": {
-        "User-Agent": "..."
-    },
+        "User-Agent": "..." 
+    }, //用于请求图片API的请求头
     "img_headers": {
-        "referer": "https://pixiv.net/" // 专门用于下载图片的请求头
-    },
+        "Referer": "https://pixiv.net/" 
+    },// 专门用于下载图片的请求头
     "replacement": {
         "pattern": "i\\.pixiv\\.re",
-        "replace": "i.pixiv.net"
-    },
+        "replace": "o.edcms.pw"
+    }, //replacement: 可选项，用于替换图片url,如镜像站
     "addition": "PID: {data.pid}" // 附加信息模板
 }
 ```
