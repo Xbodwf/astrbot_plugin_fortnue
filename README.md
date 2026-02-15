@@ -62,7 +62,7 @@
 ### 2. API 图源 (api 类型)
 
 #### 2.1 图片图源
-```json
+```jsonc
 "mwm-moe": {
     "type": "api",
     "url": "https://t.mwm.moe/mp",
@@ -75,7 +75,7 @@
 图源本身只返回对应图片的URL(如pixiv类api)
 
 通过请求外部 API 动态获取图片 URL。
-```json
+```jsonc
 "pixiv_api": {
     "type": "api",
     "url": "https://api.example.com/get_image",
@@ -98,7 +98,7 @@
 
 ### 3. 对象列表图源 (object 类型)
 适用于已经拥有图片列表及其相关元数据（如 PID、作者等）的情况。
-```json
+```jsonc
 "pixiv_links": {
     "type": "object",
     "sources": [
