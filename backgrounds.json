@@ -880,26 +880,5 @@
             "Referer": "https://pixivic.com/"
         },
         "addition": "pid {pid}"
-    },
-    "pixiv": {
-        "type": "api",
-        "url": "https://sex.nyan.run/api/v2/",
-        "method": "get",
-        "expected": "url",
-        "token": "data.url",
-        "replacement": {
-            "pattern": "sex\\.nyan\\.run",
-            "replace": "o.edcms.pw"
-        },
-        "headers": {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
-        },
-        "img_headers": {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
-            "Referer": "https://pixivic.com/"
-        },
-        "addition": "pid {data.pid}"
     }
 }
