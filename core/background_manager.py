@@ -6,7 +6,7 @@ import re
 from PIL import Image
 from io import BytesIO
 from astrbot.api import logger
-from utils.http_utils import HttpUtils
+from ..utils.http_utils import HttpUtils
 
 
 class BackgroundManager:

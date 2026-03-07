@@ -10,9 +10,9 @@ import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
-from config import ConfigLoader
-from core import BackgroundManager, FortuneGenerator, ImageModerator
-from utils import ImageUtils
+from .config import ConfigLoader
+from .core import BackgroundManager, FortuneGenerator, ImageModerator
+from .utils import ImageUtils
 
 
 @register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.30.0")

@@ -2,7 +2,7 @@
 import aiohttp
 from PIL import Image
 from astrbot.api import logger
-from utils.image_utils import ImageUtils
+from ..utils.image_utils import ImageUtils
 
 
 class ImageModerator:

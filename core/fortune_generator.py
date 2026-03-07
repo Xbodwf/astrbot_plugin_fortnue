@@ -12,7 +12,7 @@ try:
 except ImportError:
     ZhDate = None
 
-from utils.color_utils import ColorUtils
+from ..utils.color_utils import ColorUtils
 from utils.image_utils import ImageUtils
 
 
