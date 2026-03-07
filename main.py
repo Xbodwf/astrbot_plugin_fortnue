@@ -156,10 +156,7 @@ class FortunePlugin(Star):
                 # 获取头像
                 avatar_url = await self._get_avatar_url(event)
                 try:
-                    avatar = await bg_manager._resolve_api_image_url.__self__.__class__.__bases__[0].__dict__.get(
-                        'download_image', None
-                    )
-                    from utils import HttpUtils
+                    from .utils import HttpUtils
                     avatar = await HttpUtils.download_image(avatar_url, timeout=10, proxy=self._get_proxy())
                 except Exception as e:
                     logger.warning(f"下载头像失败: {e}，将使用默认空白头像")
