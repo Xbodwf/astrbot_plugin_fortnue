@@ -27,6 +27,74 @@
         "type": "int",
         "hint": "底部信息卡片的高度（像素）",
         "default": 200
+      },
+      "ignored_sources": {
+        "description": "忽略的图源列表",
+        "type": "list",
+        "items": {
+          "type": "string"
+        },
+        "hint": "使用 ^jrys 或 ^jrysn 时不会抽到这些图源。必须使用 ^jrysl 显式指定才能使用。填写图源名称（如 blue_archive）",
+        "default": []
+      },
+      "source_weights": {
+        "description": "图源权重配置",
+        "type": "list",
+        "items": {
+          "type": "string"
+        },
+        "hint": "配置图源的抽取权重，格式为 \"图源名:权重\"。例如 [\"blue_archive:2\", \"genshin:1\"]。未配置权重的图源默认权重为 1。权重越高被抽中概率越大",
+        "default": []
+      }
+    }
+  },
+  "image_moderation": {
+    "description": "图片审查配置",
+    "type": "object",
+    "hint": "配置图片内容审查功能，支持 AstrBot 内置提供商或 OpenAI Compatible API",
+    "items": {
+      "enable_moderation": {
+        "description": "启用图片审查",
+        "type": "bool",
+        "hint": "是否启用图片内容审查。启用后会对获取的背景图片进行内容检测",
+        "default": false
+      },
+      "provider_type": {
+        "description": "提供商类型",
+        "type": "string",
+        "hint": "选择审查服务的提供商类型：builtin 使用 AstrBot 内置提供商，openai_compatible 使用 OpenAI Compatible API",
+        "default": "builtin"
+      },
+      "builtin_provider_id": {
+        "description": "内置提供商ID",
+        "type": "string",
+        "hint": "使用 AstrBot 内置提供商时，填写已配置的提供商ID（如 openai/gpt-4o）",
+        "default": "",
+        "_special": "select_provider"
+      },
+      "openai_api_key": {
+        "description": "OpenAI API Key",
+        "type": "string",
+        "hint": "OpenAI Compatible API 的密钥（仅当 provider_type 为 openai_compatible 时需要）",
+        "default": ""
+      },
+      "openai_api_base": {
+        "description": "OpenAI API Base URL",
+        "type": "string",
+        "hint": "OpenAI Compatible API 的基础地址（仅当 provider_type 为 openai_compatible 时需要）。如：https://api.openai.com/v1",
+        "default": "https://api.openai.com/v1"
+      },
+      "openai_model": {
+        "description": "审查模型",
+        "type": "string",
+        "hint": "OpenAI Compatible API 使用的模型名称（仅当 provider_type 为 openai_compatible 时需要）。建议使用支持视觉的模型如 gpt-4o",
+        "default": "gpt-4o"
+      },
+      "max_retries": {
+        "description": "最大重试次数",
+        "type": "int",
+        "hint": "当图片审查不通过时，重新获取图片的最大重试次数",
+        "default": 3
       }
     }
   },

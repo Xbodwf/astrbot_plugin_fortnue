@@ -77,7 +77,223 @@ class FortunePlugin(Star):
         except Exception as e:
             logger.error(f"保存运势数据失败: {e}")
     
-    def _get_background_spec(self, source_name: str = None) -> str | dict:
+    def _get_moderation_config(self) -> dict:
+        """获取图片审查配置"""
+        if hasattr(self, "config") and self.config:
+            return self.config.get("image_moderation", {})
+        return {}
+    
+    def _image_to_base64(self, img: Image.Image) -> str:
+        """将图片转换为 base64 编码"""
+        import base64
+        buffered = BytesIO()
+        if img.mode == 'RGBA':
+            img = img.convert('RGB')
+        img.save(buffered, format="JPEG", quality=85)
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    
+    async def _moderate_image_with_builtin(self, img: Image.Image, provider_id: str) -> tuple[bool, str]:
+        """使用 AstrBot 内置提供商进行图片审查"""
+        try:
+            from astrbot.api.provider import ProviderRequest
+            from astrbot.api import AstrBotAPI
+            
+            # 获取 LLM 能力上下文
+            llm_context = self.context.get_llm_context()
+            if not llm_context:
+                return True, "无法获取 LLM 上下文"
+            
+            # 将图片转换为 base64
+            img_base64 = self._image_to_base64(img)
+            
+            # 构建审查提示词
+            prompt = """请分析这张图片，判断是否包含以下不适宜内容：
+1. 色情/成人内容
+2. 暴力/血腥内容
+3. 违法/危险内容
+4. 极端或令人不适的内容
+
+请只回复 "PASS" 或 "REJECT"：
+- 如果图片安全、适合一般用户查看，回复 "PASS"
+- 如果包含不适宜内容，回复 "REJECT"
+
+只回复 PASS 或 REJECT，不要其他内容。"""
+            
+            # 使用提供商进行审查
+            api: AstrBotAPI = self.context.api
+            provider_manager = api.provider_manager
+            
+            provider = provider_manager.get_provider(provider_id)
+            if not provider:
+                return True, f"未找到提供商: {provider_id}"
+            
+            # 构建消息
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
+                    ]
+                }
+            ]
+            
+            response = await provider.text_chat(messages)
+            result = response.get("content", "").strip().upper()
+            
+            if "PASS" in result:
+                return True, "审查通过"
+            elif "REJECT" in result:
+                return False, "图片内容不适宜"
+            else:
+                # 无法判断时默认通过
+                logger.warning(f"审查结果无法解析: {result}")
+                return True, f"审查结果未知: {result}"
+                
+        except Exception as e:
+            logger.error(f"内置提供商审查失败: {e}")
+            return True, f"审查出错: {e}"
+    
+    async def _moderate_image_with_openai(self, img: Image.Image, api_key: str, api_base: str, model: str) -> tuple[bool, str]:
+        """使用 OpenAI Compatible API 进行图片审查"""
+        try:
+            import base64
+            
+            # 将图片转换为 base64
+            img_base64 = self._image_to_base64(img)
+            
+            # 构建审查提示词
+            prompt = """请分析这张图片，判断是否包含以下不适宜内容：
+1. 色情/成人内容
+2. 暴力/血腥内容
+3. 违法/危险内容
+4. 极端或令人不适的内容
+
+请只回复 "PASS" 或 "REJECT"：
+- 如果图片安全、适合一般用户查看，回复 "PASS"
+- 如果包含不适宜内容，回复 "REJECT"
+
+只回复 PASS 或 REJECT，不要其他内容。"""
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
+                        ]
+                    }
+                ],
+                "max_tokens": 10
+            }
+            
+            proxy = self._get_proxy()
+            async with aiohttp.ClientSession() as session:
+                url = f"{api_base.rstrip('/')}/chat/completions"
+                async with session.post(url, json=payload, headers=headers, 
+                                        timeout=aiohttp.ClientTimeout(total=60),
+                                        proxy=proxy) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        return True, f"API 请求失败: {resp.status} - {error_text}"
+                    
+                    data = await resp.json()
+                    result = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip().upper()
+                    
+                    if "PASS" in result:
+                        return True, "审查通过"
+                    elif "REJECT" in result:
+                        return False, "图片内容不适宜"
+                    else:
+                        logger.warning(f"审查结果无法解析: {result}")
+                        return True, f"审查结果未知: {result}"
+                        
+        except Exception as e:
+            logger.error(f"OpenAI Compatible API 审查失败: {e}")
+            return True, f"审查出错: {e}"
+    
+    async def _moderate_image(self, img: Image.Image) -> tuple[bool, str]:
+        """执行图片审查"""
+        config = self._get_moderation_config()
+        
+        if not config.get("enable_moderation", False):
+            return True, "审查未启用"
+        
+        provider_type = config.get("provider_type", "builtin")
+        
+        if provider_type == "builtin":
+            provider_id = config.get("builtin_provider_id", "")
+            if not provider_id:
+                return True, "未配置内置提供商ID"
+            return await self._moderate_image_with_builtin(img, provider_id)
+        
+        elif provider_type == "openai_compatible":
+            api_key = config.get("openai_api_key", "")
+            api_base = config.get("openai_api_base", "https://api.openai.com/v1")
+            model = config.get("openai_model", "gpt-4o")
+            
+            if not api_key:
+                return True, "未配置 OpenAI API Key"
+            
+            return await self._moderate_image_with_openai(img, api_key, api_base, model)
+        
+        else:
+            return True, f"未知的提供商类型: {provider_type}"
+    
+    def _get_ignored_sources(self) -> list:
+        """从配置获取忽略的图源列表"""
+        if hasattr(self, "config") and self.config:
+            return self.config.get("fortune_config", {}).get("ignored_sources", [])
+        return []
+    
+    def _get_source_weights(self) -> dict:
+        """从配置获取图源权重映射"""
+        weights = {}
+        if hasattr(self, "config") and self.config:
+            weight_list = self.config.get("fortune_config", {}).get("source_weights", [])
+            for item in weight_list:
+                if isinstance(item, str) and ":" in item:
+                    parts = item.split(":", 1)
+                    if len(parts) == 2:
+                        name = parts[0].strip()
+                        try:
+                            weight = float(parts[1].strip())
+                            if weight > 0:
+                                weights[name] = weight
+                        except ValueError:
+                            pass
+        return weights
+    
+    def _weighted_choice(self, choices: list, weights: dict) -> str:
+        """根据权重进行加权随机选择"""
+        if not choices:
+            return ""
+        
+        # 计算每个选项的权重（未配置的默认为1）
+        choice_weights = [weights.get(choice, 1.0) for choice in choices]
+        total_weight = sum(choice_weights)
+        
+        if total_weight <= 0:
+            return random.choice(choices)
+        
+        # 加权随机选择
+        r = random.uniform(0, total_weight)
+        cumsum = 0
+        for choice, weight in zip(choices, choice_weights):
+            cumsum += weight
+            if r <= cumsum:
+                return choice
+        
+        return choices[-1]
+    
+    def _get_background_spec(self, source_name: str = None, ignore_sources: bool = True) -> str | dict:
         if not self.backgrounds_data:
             return ""
         
@@ -101,9 +317,19 @@ class FortunePlugin(Star):
                         return chosen
             return "" # 指定图源不存在或无效
 
-        # 未指定图源，随机选择
+        # 获取忽略的图源列表
+        ignored = self._get_ignored_sources() if ignore_sources else []
+        ignored_set = set(ignored) if ignored else set()
+        
+        # 获取图源权重配置
+        source_weights = self._get_source_weights()
+        
+        # 未指定图源，随机选择（排除忽略列表中的图源）
         source_keys = []
         for k, v in self.backgrounds_data.items():
+            # 跳过忽略的图源
+            if k in ignored_set:
+                continue
             if isinstance(v, list) and len(v) > 0:
                 source_keys.append(k)
             elif isinstance(v, str) and v:
@@ -123,8 +349,9 @@ class FortunePlugin(Star):
         
         if not source_keys:
             return ""
-            
-        chosen_key = random.choice(source_keys)
+        
+        # 使用加权随机选择
+        chosen_key = self._weighted_choice(source_keys, source_weights)
         chosen = self.backgrounds_data.get(chosen_key)
         
         if isinstance(chosen, list) and len(chosen) > 0:
@@ -816,88 +1043,132 @@ class FortunePlugin(Star):
 
     async def _handle_none_generation(self, event: AstrMessageEvent, source_name: str = None):
         """处理纯背景图片获取逻辑"""
-        try:
-            bg_spec = self._get_background_spec(source_name)
-            if not bg_spec:
-                if source_name:
-                    yield event.plain_result(f"未找到指定的图源: {source_name}")
-                else:
-                    yield event.plain_result("暂无背景图源配置，请检查 backgrounds.json~")
-                return
-
-            # 获取背景图和附加文本
-            background, _ = await self._get_background_and_addition(bg_spec)
-            
-            if not background:
-                raise Exception("无法加载背景图片")
-            
-            result_image = self._process_background(background)
-            
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                result_image.save(f, format="JPEG", quality=95)
-                temp_path = f.name
-            
+        moderation_config = self._get_moderation_config()
+        enable_moderation = moderation_config.get("enable_moderation", False)
+        max_retries = moderation_config.get("max_retries", 3)
+        
+        retries = 0
+        last_error = None
+        
+        while retries <= max_retries:
             try:
-                yield event.image_result(temp_path)
-            finally:
+                bg_spec = self._get_background_spec(source_name)
+                if not bg_spec:
+                    if source_name:
+                        yield event.plain_result(f"未找到指定的图源: {source_name}")
+                    else:
+                        yield event.plain_result("暂无背景图源配置，请检查 backgrounds.json~")
+                    return
+
+                # 获取背景图和附加文本
+                background, _ = await self._get_background_and_addition(bg_spec)
+                
+                if not background:
+                    raise Exception("无法加载背景图片")
+                
+                # 图片审查
+                if enable_moderation:
+                    passed, reason = await self._moderate_image(background)
+                    if not passed:
+                        logger.warning(f"图片审查未通过: {reason}, 重试中...")
+                        retries += 1
+                        last_error = f"图片审查未通过: {reason}"
+                        continue
+                
+                result_image = self._process_background(background)
+                
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                    result_image.save(f, format="JPEG", quality=95)
+                    temp_path = f.name
+                
                 try:
-                    os.remove(temp_path)
-                except:
-                    pass
+                    yield event.image_result(temp_path)
+                finally:
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+                return
                     
-        except Exception as e:
-            logger.error(f"获取背景图片失败: {e}")
-            yield event.plain_result(f"获取失败: {e}")
+            except Exception as e:
+                logger.error(f"获取背景图片失败: {e}")
+                last_error = str(e)
+                retries += 1
+        
+        # 重试次数用尽
+        yield event.plain_result(f"获取失败: {last_error or '重试次数已达上限'}")
 
     async def _handle_fortune_generation(self, event: AstrMessageEvent, source_name: str = None):
         user_id = event.get_sender_id()
         user_name = event.get_sender_name()
         
-        try:
-            bg_spec = self._get_background_spec(source_name)
-            if not bg_spec:
-                if source_name:
-                    yield event.plain_result(f"未找到指定的图源: {source_name}")
-                else:
-                    yield event.plain_result("暂无背景图源配置，请检查 backgrounds.json~")
-                return
+        moderation_config = self._get_moderation_config()
+        enable_moderation = moderation_config.get("enable_moderation", False)
+        max_retries = moderation_config.get("max_retries", 3)
+        
+        retries = 0
+        last_error = None
+        
+        while retries <= max_retries:
+            try:
+                bg_spec = self._get_background_spec(source_name)
+                if not bg_spec:
+                    if source_name:
+                        yield event.plain_result(f"未找到指定的图源: {source_name}")
+                    else:
+                        yield event.plain_result("暂无背景图源配置，请检查 backgrounds.json~")
+                    return
 
-            # 获取背景图和附加文本
-            background, addition_text = await self._get_background_and_addition(bg_spec)
-            
-            if not background:
-                raise Exception("无法加载背景图片")
-            
-            self.user_last_backgrounds[user_id] = background.copy()
-            
-            avatar_url = await self._get_avatar_url(event)
-            try:
-                avatar = await self._download_image(avatar_url, timeout=10)
-            except Exception as e:
-                logger.warning(f"下载头像失败: {e}，将使用默认空白头像")
-                avatar = Image.new('RGB', (100, 100), (200, 200, 200))
-            
-            fortune_data = self._get_fortune_for_user(user_id)
-            
-            loop = asyncio.get_event_loop()
-            with ThreadPoolExecutor() as executor:
-                result_image = await loop.run_in_executor(executor, self._create_fortune_image, background, avatar, user_name, fortune_data, addition_text)
-            
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                result_image.save(f, format="JPEG", quality=90)
-                temp_path = f.name
-            
-            try:
-                yield event.image_result(temp_path)
-            finally:
+                # 获取背景图和附加文本
+                background, addition_text = await self._get_background_and_addition(bg_spec)
+                
+                if not background:
+                    raise Exception("无法加载背景图片")
+                
+                # 图片审查
+                if enable_moderation:
+                    passed, reason = await self._moderate_image(background)
+                    if not passed:
+                        logger.warning(f"图片审查未通过: {reason}, 重试中...")
+                        retries += 1
+                        last_error = f"图片审查未通过: {reason}"
+                        continue
+                
+                self.user_last_backgrounds[user_id] = background.copy()
+                
+                avatar_url = await self._get_avatar_url(event)
                 try:
-                    os.remove(temp_path)
-                except:
-                    pass
+                    avatar = await self._download_image(avatar_url, timeout=10)
+                except Exception as e:
+                    logger.warning(f"下载头像失败: {e}，将使用默认空白头像")
+                    avatar = Image.new('RGB', (100, 100), (200, 200, 200))
+                
+                fortune_data = self._get_fortune_for_user(user_id)
+                
+                loop = asyncio.get_event_loop()
+                with ThreadPoolExecutor() as executor:
+                    result_image = await loop.run_in_executor(executor, self._create_fortune_image, background, avatar, user_name, fortune_data, addition_text)
+                
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                    result_image.save(f, format="JPEG", quality=90)
+                    temp_path = f.name
+                
+                try:
+                    yield event.image_result(temp_path)
+                finally:
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+                return
             
-        except Exception as e:
-            logger.error(f"生成运势图片失败: {e}")
-            yield event.plain_result(f"生成失败: {e}")
+            except Exception as e:
+                logger.error(f"生成运势图片失败: {e}")
+                last_error = str(e)
+                retries += 1
+        
+        # 重试次数用尽
+        yield event.plain_result(f"生成失败: {last_error or '重试次数已达上限'}")
 
     @filter.command("jrys", alias=["今日运势", "运势"])
     async def jrys_cmd(self, event: AstrMessageEvent):
