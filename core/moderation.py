@@ -8,7 +8,7 @@ from utils.image_utils import ImageUtils
 class ImageModerator:
     """图片审查器"""
     
-    MODERATION_PROMPT = """请分析这张图片，判断是否包含以下不适宜内容：
+    DEFAULT_MODERATION_PROMPT = """请分析这张图片，判断是否包含以下不适宜内容：
 1. 色情/成人内容
 2. 暴力/血腥内容
 3. 违法/危险内容
@@ -24,6 +24,13 @@ class ImageModerator:
         self.config = config
         self.context = context
         self.proxy = proxy
+    
+    def get_moderation_prompt(self) -> str:
+        """获取审查提示词"""
+        custom_prompt = self.config.get("moderation_prompt", "")
+        if custom_prompt and custom_prompt.strip():
+            return custom_prompt.strip()
+        return self.DEFAULT_MODERATION_PROMPT
     
     def is_enabled(self) -> bool:
         """检查审查是否启用"""
@@ -54,7 +61,7 @@ class ImageModerator:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": self.MODERATION_PROMPT},
+                        {"type": "text", "text": self.get_moderation_prompt()},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
                     ]
                 }
@@ -92,7 +99,7 @@ class ImageModerator:
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": self.MODERATION_PROMPT},
+                            {"type": "text", "text": self.get_moderation_prompt()},
                             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
                         ]
                     }

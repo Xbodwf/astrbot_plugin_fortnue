@@ -95,6 +95,12 @@
         "type": "int",
         "hint": "当图片审查不通过时，重新获取图片的最大重试次数",
         "default": 3
+      },
+      "moderation_prompt": {
+        "description": "审查提示词",
+        "type": "string",
+        "hint": "自定义图片审查的提示词。留空则使用默认提示词。可使用 {PASS} 和 {REJECT} 作为回复关键词占位符",
+        "default": ""
       }
     }
   },
