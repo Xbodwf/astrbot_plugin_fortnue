@@ -43,20 +43,26 @@ class ImageModerator:
     async def moderate_with_builtin(self, img: Image.Image, provider_id: str) -> tuple:
         """使用 AstrBot 内置提供商进行图片审查"""
         try:
+            logger.info(f"[图片审查] 开始使用内置提供商: {provider_id}")
             from astrbot.api import AstrBotAPI
-            
+
             if not self.context:
+                logger.error("[图片审查] 无上下文，无法使用内置提供商")
                 return True, "无上下文，无法使用内置提供商"
-            
+
             img_base64 = ImageUtils.image_to_base64(img)
-            
+            logger.info(f"[图片审查] 图片已转换为base64，长度: {len(img_base64)}")
+
             api: AstrBotAPI = self.context.api
             provider_manager = api.provider_manager
-            
+
             provider = provider_manager.get_provider(provider_id)
             if not provider:
+                logger.error(f"[图片审查] 未找到提供商: {provider_id}")
                 return True, f"未找到提供商: {provider_id}"
-            
+
+            logger.info(f"[图片审查] 找到提供商: {provider}")
+
             messages = [
                 {
                     "role": "user",
@@ -66,20 +72,24 @@ class ImageModerator:
                     ]
                 }
             ]
-            
+
+            logger.info(f"[图片审查] 发送审查请求到提供商...")
             response = await provider.text_chat(messages)
+            logger.info(f"[图片审查] 收到响应: {response}")
             result = response.get("content", "").strip().upper()
-            
+
             if "PASS" in result:
+                logger.info("[图片审查] 审查通过")
                 return True, "审查通过"
             elif "REJECT" in result:
+                logger.warning(f"[图片审查] 图片被拒绝: {result}")
                 return False, "图片内容不适宜"
             else:
-                logger.warning(f"审查结果无法解析: {result}")
+                logger.warning(f"[图片审查] 审查结果无法解析: {result}")
                 return True, f"审查结果未知: {result}"
-                
+
         except Exception as e:
-            logger.error(f"内置提供商审查失败: {e}")
+            logger.error(f"[图片审查] 内置提供商审查失败: {e}", exc_info=True)
             return True, f"审查出错: {e}"
     
     async def moderate_with_openai(self, img: Image.Image, api_key: str, 
@@ -133,26 +143,40 @@ class ImageModerator:
     
     async def moderate(self, img: Image.Image) -> tuple:
         """执行图片审查"""
+        logger.info(f"[图片审查] 开始审查，配置: {self.config}")
+
         if not self.is_enabled():
+            logger.info("[图片审查] 审查未启用")
             return True, "审查未启用"
-        
+
         provider_type = self.config.get("provider_type", "builtin")
+        logger.info(f"[图片审查] 使用提供商类型: {provider_type}")
         
         if provider_type == "builtin":
             provider_id = self.config.get("builtin_provider_id", "")
+            logger.info(f"[图片审查] 内置提供商ID: {provider_id}")
             if not provider_id:
+                logger.warning("[图片审查] 未配置内置提供商ID")
                 return True, "未配置内置提供商ID"
-            return await self.moderate_with_builtin(img, provider_id)
+            logger.info(f"[图片审查] 调用内置提供商审查: {provider_id}")
+            result = await self.moderate_with_builtin(img, provider_id)
+            logger.info(f"[图片审查] 审查结果: {result}")
+            return result
         
         elif provider_type == "openai_compatible":
             api_key = self.config.get("openai_api_key", "")
             api_base = self.config.get("openai_api_base", "https://api.openai.com/v1")
             model = self.config.get("openai_model", "gpt-4o")
-            
+
+            logger.info(f"[图片审查] OpenAI Compatible API配置 - base: {api_base}, model: {model}")
             if not api_key:
+                logger.warning("[图片审查] 未配置 OpenAI API Key")
                 return True, "未配置 OpenAI API Key"
-            
-            return await self.moderate_with_openai(img, api_key, api_base, model)
-        
+
+            result = await self.moderate_with_openai(img, api_key, api_base, model)
+            logger.info(f"[图片审查] 审查结果: {result}")
+            return result
+
         else:
+            logger.error(f"[图片审查] 未知的提供商类型: {provider_type}")
             return True, f"未知的提供商类型: {provider_type}"

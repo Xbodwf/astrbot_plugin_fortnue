@@ -50,8 +50,13 @@ class FortunePlugin(Star):
     
     def _get_moderator(self) -> ImageModerator:
         """获取图片审查器"""
-        moderation_config = ConfigLoader.get_moderation_config(self._get_config())
-        return ImageModerator(moderation_config, self.context, self._get_proxy())
+        config = self._get_config()
+        logger.info(f"[插件配置] 完整配置: {config}")
+        moderation_config = ConfigLoader.get_moderation_config(config)
+        logger.info(f"[插件配置] 图片审查配置: {moderation_config}")
+        moderator = ImageModerator(moderation_config, self.context, self._get_proxy())
+        logger.info(f"[插件配置] 审查器已创建，启用状态: {moderator.is_enabled()}")
+        return moderator
     
     async def _get_avatar_url(self, event: AstrMessageEvent) -> str:
         """获取用户头像URL"""
@@ -85,12 +90,16 @@ class FortunePlugin(Star):
                 
                 # 图片审查
                 if moderator.is_enabled():
+                    logger.info(f"[运势生成] 开始图片审查，重试次数: {retries}/{max_retries}")
                     passed, reason = await moderator.moderate(background)
+                    logger.info(f"[运势生成] 审查结果: passed={passed}, reason={reason}")
                     if not passed:
                         logger.warning(f"图片审查未通过: {reason}, 重试中...")
                         retries += 1
                         last_error = f"图片审查未通过: {reason}"
                         continue
+                else:
+                    logger.info("[运势生成] 图片审查未启用")
                 
                 result_image = ImageUtils.process_background(background)
                 
@@ -144,12 +153,16 @@ class FortunePlugin(Star):
                 
                 # 图片审查
                 if moderator.is_enabled():
+                    logger.info(f"[运势生成] 开始图片审查，重试次数: {retries}/{max_retries}")
                     passed, reason = await moderator.moderate(background)
+                    logger.info(f"[运势生成] 审查结果: passed={passed}, reason={reason}")
                     if not passed:
                         logger.warning(f"图片审查未通过: {reason}, 重试中...")
                         retries += 1
                         last_error = f"图片审查未通过: {reason}"
                         continue
+                else:
+                    logger.info("[运势生成] 图片审查未启用")
                 
                 self.user_last_backgrounds[user_id] = background.copy()
                 
