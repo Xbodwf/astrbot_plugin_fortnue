@@ -37,6 +37,47 @@ class ImageModerator:
     def is_enabled(self) -> bool:
         """检查审查是否启用"""
         return self.config.get("enable_moderation", False)
+
+    def should_moderate_source(self, source_name: str) -> bool:
+        """检查指定图源是否需要审核
+
+        Args:
+            source_name: 图源名称（如 pixiv, blue_archive）
+
+        Returns:
+            True 表示需要审核，False 表示跳过审核
+        """
+        if not self.is_enabled():
+            return False
+
+        filter_mode = self.config.get("source_filter_mode", "blacklist")
+        filter_list = self.config.get("source_filter_list", ["pixiv"])
+
+        # 黑名单模式：列表中的图源不审核
+        if filter_mode == "blacklist":
+            should_moderate = source_name not in filter_list
+            logger.debug(f"[图片审查] 黑名单模式 - 图源 {source_name} {'需要' if should_moderate else '不需要'}审核")
+            return should_moderate
+
+        # 白名单模式：仅列表中的图源需要审核
+        elif filter_mode == "whitelist":
+            should_moderate = source_name in filter_list
+            logger.debug(f"[图片审查] 白名单模式 - 图源 {source_name} {'需要' if should_moderate else '不需要'}审核")
+            return should_moderate
+
+        # 未知模式，默认需要审核
+        logger.warning(f"[图片审查] 未知的过滤模式: {filter_mode}，默认需要审核")
+        return True
+
+    def get_failed_action(self) -> str:
+        """获取审核失败后的行为
+
+        Returns:
+            retry_same: 从同一图源重新取图
+            switch_source: 切换到其他图源
+            notify_user: 提示用户审核失败
+        """
+        return self.config.get("failed_action", "retry_same")
     
     def get_max_retries(self) -> int:
         """获取最大重试次数"""

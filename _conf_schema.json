@@ -101,6 +101,27 @@
         "type": "string",
         "hint": "自定义图片审查的提示词。留空则使用默认提示词。可使用 {PASS} 和 {REJECT} 作为回复关键词占位符",
         "default": ""
+      },
+      "source_filter_mode": {
+        "description": "图源过滤模式",
+        "type": "string",
+        "hint": "选择图源审核过滤模式：blacklist（黑名单，列表中的图源不审核）或 whitelist（白名单，仅列表中的图源需要审核）",
+        "default": "whitelist"
+      },
+      "source_filter_list": {
+        "description": "图源过滤列表",
+        "type": "list",
+        "items": {
+          "type": "string"
+        },
+        "hint": "根据 source_filter_mode 配置黑名单或白名单。填写图源名称（如 pixiv, blue_archive）",
+        "default": ["pixiv"]
+      },
+      "failed_action": {
+        "description": "审核失败后的行为",
+        "type": "string",
+        "hint": "当图片审核不通过时的处理方式：retry_same（从同一图源重新取图）、switch_source（切换到其他图源）、notify_user（提示用户审核失败）",
+        "default": "retry_same"
       }
     }
   },
