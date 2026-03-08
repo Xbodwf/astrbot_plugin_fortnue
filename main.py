@@ -35,8 +35,22 @@ class FortunePlugin(Star):
     
     def _get_config(self) -> dict:
         """获取插件配置"""
+        # 优先从 context 获取配置
+        if hasattr(self.context, "get_config") and callable(self.context.get_config):
+            try:
+                config = self.context.get_config()
+                if config:
+                    logger.info(f"[配置加载] 从 context.get_config() 获取配置成功")
+                    return config
+            except Exception as e:
+                logger.warning(f"[配置加载] 从 context.get_config() 获取配置失败: {e}")
+
+        # 兼容旧版本：从 self.config 获取
         if hasattr(self, "config") and self.config:
+            logger.info(f"[配置加载] 从 self.config 获取配置")
             return self.config
+
+        logger.warning(f"[配置加载] 未找到任何配置，返回空字典")
         return {}
     
     def _get_proxy(self) -> str | None:
