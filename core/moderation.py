@@ -1,5 +1,7 @@
 """图片审查模块"""
 import aiohttp
+import os
+import tempfile
 from PIL import Image
 from astrbot.api import logger
 from ..utils.image_utils import ImageUtils
@@ -42,15 +44,13 @@ class ImageModerator:
     
     async def moderate_with_builtin(self, img: Image.Image, provider_id: str) -> tuple:
         """使用 AstrBot 内置提供商进行图片审查"""
+        temp_path = None
         try:
             logger.info(f"[图片审查] 开始使用内置提供商: {provider_id}")
 
             if not self.context:
                 logger.error("[图片审查] 无上下文，无法使用内置提供商")
                 return True, "无上下文，无法使用内置提供商"
-
-            img_base64 = ImageUtils.image_to_base64(img)
-            logger.info(f"[图片审查] 图片已转换为base64，长度: {len(img_base64)}")
 
             # 使用 context.get_provider_by_id() 获取提供商
             provider = self.context.get_provider_by_id(provider_id)
@@ -60,22 +60,30 @@ class ImageModerator:
 
             logger.info(f"[图片审查] 找到提供商: {provider.meta().id}")
 
-            # 构建消息
+            # 保存图片到临时文件
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                img.save(f, format="JPEG", quality=95)
+                temp_path = f.name
+
+            logger.info(f"[图片审查] 图片已保存到临时文件: {temp_path}")
+
+            # 构建提示词
             prompt = self.get_moderation_prompt()
-            image_url = f"data:image/jpeg;base64,{img_base64}"
 
             logger.info(f"[图片审查] 发送审查请求到提供商...")
 
-            # 使用 text_chat 方法，传入 image_urls 参数
+            # 使用 text_chat 方法，传入图片文件路径
             response = await provider.text_chat(
                 prompt=prompt,
-                image_urls=[image_url]
+                image_urls=[temp_path]
             )
 
             logger.info(f"[图片审查] 收到响应: {response}")
 
             # 提取响应内容
-            if isinstance(response, dict):
+            if hasattr(response, 'completion_text'):
+                result = response.completion_text.strip().upper()
+            elif isinstance(response, dict):
                 result = response.get("content", "").strip().upper()
             else:
                 result = str(response).strip().upper()
@@ -93,6 +101,14 @@ class ImageModerator:
         except Exception as e:
             logger.error(f"[图片审查] 内置提供商审查失败: {e}", exc_info=True)
             return True, f"审查出错: {e}"
+        finally:
+            # 清理临时文件
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                    logger.debug(f"[图片审查] 已删除临时文件: {temp_path}")
+                except Exception as e:
+                    logger.warning(f"[图片审查] 删除临时文件失败: {e}")
     
     async def moderate_with_openai(self, img: Image.Image, api_key: str, 
                                     api_base: str, model: str) -> tuple:
