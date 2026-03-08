@@ -44,7 +44,6 @@ class ImageModerator:
         """使用 AstrBot 内置提供商进行图片审查"""
         try:
             logger.info(f"[图片审查] 开始使用内置提供商: {provider_id}")
-            from astrbot.api import AstrBotAPI
 
             if not self.context:
                 logger.error("[图片审查] 无上下文，无法使用内置提供商")
@@ -53,30 +52,33 @@ class ImageModerator:
             img_base64 = ImageUtils.image_to_base64(img)
             logger.info(f"[图片审查] 图片已转换为base64，长度: {len(img_base64)}")
 
-            api: AstrBotAPI = self.context.api
-            provider_manager = api.provider_manager
-
-            provider = provider_manager.get_provider(provider_id)
+            # 使用 context.get_provider_by_id() 获取提供商
+            provider = self.context.get_provider_by_id(provider_id)
             if not provider:
                 logger.error(f"[图片审查] 未找到提供商: {provider_id}")
                 return True, f"未找到提供商: {provider_id}"
 
-            logger.info(f"[图片审查] 找到提供商: {provider}")
+            logger.info(f"[图片审查] 找到提供商: {provider.meta().id}")
 
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": self.get_moderation_prompt()},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
-                    ]
-                }
-            ]
+            # 构建消息
+            prompt = self.get_moderation_prompt()
+            image_url = f"data:image/jpeg;base64,{img_base64}"
 
             logger.info(f"[图片审查] 发送审查请求到提供商...")
-            response = await provider.text_chat(messages)
+
+            # 使用 text_chat 方法，传入 image_urls 参数
+            response = await provider.text_chat(
+                prompt=prompt,
+                image_urls=[image_url]
+            )
+
             logger.info(f"[图片审查] 收到响应: {response}")
-            result = response.get("content", "").strip().upper()
+
+            # 提取响应内容
+            if isinstance(response, dict):
+                result = response.get("content", "").strip().upper()
+            else:
+                result = str(response).strip().upper()
 
             if "PASS" in result:
                 logger.info("[图片审查] 审查通过")
