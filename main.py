@@ -19,23 +19,31 @@ from .utils import ImageUtils
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
+        self.config = config  # 保存配置
         self.data_dir = os.path.dirname(os.path.abspath(__file__))
         self.backgrounds_path = os.path.join(self.data_dir, "backgrounds.json")
-        
+
         # 加载配置
         self.backgrounds_data = ConfigLoader.load_backgrounds(self.backgrounds_path)
-        
+
         # 初始化各模块
         self.fortune_generator = FortuneGenerator(self.data_dir)
-        
+
         # 用户数据
         self.user_last_backgrounds = {}
+
+        logger.info(f"[插件初始化] 收到的 config 参数: {config}")
     
     def _get_config(self) -> dict:
         """获取插件配置"""
-        # 优先从 context 获取配置
+        # 优先使用 __init__ 接收的 config 参数
+        if hasattr(self, "config") and self.config:
+            logger.info(f"[配置加载] 从 self.config 获取配置")
+            return self.config
+
+        # 尝试从 context 获取配置
         if hasattr(self.context, "get_config") and callable(self.context.get_config):
             try:
                 config = self.context.get_config()
@@ -44,11 +52,6 @@ class FortunePlugin(Star):
                     return config
             except Exception as e:
                 logger.warning(f"[配置加载] 从 context.get_config() 获取配置失败: {e}")
-
-        # 兼容旧版本：从 self.config 获取
-        if hasattr(self, "config") and self.config:
-            logger.info(f"[配置加载] 从 self.config 获取配置")
-            return self.config
 
         logger.warning(f"[配置加载] 未找到任何配置，返回空字典")
         return {}
