@@ -35,7 +35,7 @@
           "type": "string"
         },
         "hint": "使用 ^jrys 或 ^jrysn 时不会抽到这些图源。必须使用 ^jrysl 显式指定才能使用。填写图源名称（如 blue_archive）",
-        "default": []
+        "default": ["pixiv"]
       },
       "source_weights": {
         "description": "图源权重配置",
