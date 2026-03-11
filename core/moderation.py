@@ -103,6 +103,17 @@ class ImageModerator:
 
             # 保存图片到临时文件
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                # 如果图片有透明通道，转换为 RGB
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    # 创建白色背景
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+
                 img.save(f, format="JPEG", quality=95)
                 temp_path = f.name
 
