@@ -762,6 +762,18 @@
         "https://i2.hdslb.com/bfs/article/fe6a4bc576e27b241342ee3c8c1849bee9fc4b1b.jpg",
         "https://i2.hdslb.com/bfs/article/9ffbbd3e7008180fd24f3ce37cb29b6e07aa228d.jpg"
     ],
+    "gtimg": [
+        "https://g.gtimg.cn/music/photo_new/T053XD01002HVkNZ471x2B.png",
+        "https://g.gtimg.cn/music/photo_new/T053XD01004JnGjq1VgAVP.jpg",
+        "https://g.gtimg.cn/music/photo_new/T053XD01001QpRgZ2mnDWx.jpg",
+        "https://g.gtimg.cn/music/photo_new/T053XD01000JNQh64KbiaV.jpg",
+        "https://g.gtimg.cn/music/photo_new/T053XD01004AiDQk46zBKz.png",
+        "https://g.gtimg.cn/music/photo_new/T053XD010033d5y529HFiT.png",
+        "https://g.gtimg.cn/music/photo_new/T053XD01004JrjqK3cxlTc.jpg",
+        "https://g.gtimg.cn/music/photo_new/T053XD01001Hrl7t0fYtX6.png",
+        "https://g.gtimg.cn/music/photo_new/T053XD0100037QX30aVDfF.jpg",
+        "https://g.gtimg.cn/music/photo_new/T053XD01001W5aHq4aIJpO.png"
+    ],
     "alcy_mp": {
         "type": "api",
         "url": "https://t.alcy.cc/mp",
