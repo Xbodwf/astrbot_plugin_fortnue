@@ -141,13 +141,25 @@ class FortunePlugin(Star):
                 # 图片审查
                 if moderator.is_enabled():
                     logger.info(f"[运势生成] 开始图片审查，重试次数: {retries}/{max_retries}")
-                    passed, reason = await moderator.moderate(background)
-                    logger.info(f"[运势生成] 审查结果: passed={passed}, reason={reason}")
+                    passed, reason, bboxes = await moderator.moderate(background)
+                    logger.info(f"[运势生成] 审查结果: passed={passed}, reason={reason}, bboxes={bboxes}")
+                    
                     if not passed:
-                        logger.warning(f"图片审查未通过: {reason}, 重试中...")
-                        retries += 1
-                        last_error = f"图片审查未通过: {reason}"
-                        continue
+                        failed_action = moderator.get_failed_action()
+                        
+                        # 打码模式
+                        if failed_action == "mosaic" and bboxes:
+                            logger.info(f"[运势生成] 打码模式：对 {len(bboxes)} 个区域应用马赛克")
+                            background = ImageUtils.apply_mosaic_multi(
+                                background, bboxes, moderator.get_mosaic_block_size()
+                            )
+                            # 打码后继续使用这张图片
+                        else:
+                            # 其他模式：重试
+                            logger.warning(f"图片审查未通过: {reason}, 重试中...")
+                            retries += 1
+                            last_error = f"图片审查未通过: {reason}"
+                            continue
                 else:
                     logger.info("[运势生成] 图片审查未启用")
                 
@@ -222,25 +234,33 @@ class FortunePlugin(Star):
 
                     if should_moderate:
                         logger.info(f"[运势生成] 图源 {actual_source} 需要审核，开始图片审查，重试次数: {retries}/{max_retries}")
-                        passed, reason = await moderator.moderate(background)
-                        logger.info(f"[运势生成] 审查结果: passed={passed}, reason={reason}")
+                        passed, reason, bboxes = await moderator.moderate(background)
+                        logger.info(f"[运势生成] 审查结果: passed={passed}, reason={reason}, bboxes={bboxes}")
 
                         if not passed:
-                            logger.warning(f"图片审查未通过: {reason}")
-                            retries += 1
-                            last_error = f"图片审查未通过: {reason}"
+                            # 打码模式
+                            if failed_action == "mosaic" and bboxes:
+                                logger.info(f"[运势生成] 打码模式：对 {len(bboxes)} 个区域应用马赛克")
+                                background = ImageUtils.apply_mosaic_multi(
+                                    background, bboxes, moderator.get_mosaic_block_size()
+                                )
+                                # 打码后继续使用这张图片
+                            else:
+                                logger.warning(f"图片审查未通过: {reason}")
+                                retries += 1
+                                last_error = f"图片审查未通过: {reason}"
 
-                            # 根据配置的失败行为处理
-                            if failed_action == "notify_user":
-                                yield event.plain_result(f"背景图因审查不通过无法生成运势\n原因: {reason}")
-                                return
-                            elif failed_action == "switch_source":
-                                logger.info(f"[运势生成] 失败行为: 切换图源")
-                                current_source = None  # 下次循环会选择新图源
-                            else:  # retry_same
-                                logger.info(f"[运势生成] 失败行为: 从同一图源重新取图")
+                                # 根据配置的失败行为处理
+                                if failed_action == "notify_user":
+                                    yield event.plain_result(f"背景图因审查不通过无法生成运势\n原因: {reason}")
+                                    return
+                                elif failed_action == "switch_source":
+                                    logger.info(f"[运势生成] 失败行为: 切换图源")
+                                    current_source = None  # 下次循环会选择新图源
+                                else:  # retry_same
+                                    logger.info(f"[运势生成] 失败行为: 从同一图源重新取图")
 
-                            continue
+                                continue
                     else:
                         logger.info(f"[运势生成] 图源 {actual_source} 在过滤列表中，跳过审核")
                 else:

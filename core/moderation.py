@@ -2,6 +2,8 @@
 import aiohttp
 import os
 import tempfile
+import json
+import re
 from PIL import Image
 from astrbot.api import logger
 from ..utils.image_utils import ImageUtils
@@ -22,6 +24,23 @@ class ImageModerator:
 
 只回复 PASS 或 REJECT，不要其他内容。"""
     
+    MOSAIC_MODERATION_PROMPT = """请分析这张图片，判断是否包含以下不适宜内容：
+1. 色情/成人内容
+2. 暴力/血腥内容
+3. 违法/危险内容
+4. 极端或令人不适的内容
+
+如果图片安全、适合一般用户查看，请只回复 "PASS"。
+
+如果包含不适宜内容，请输出不适宜区域的坐标，格式如下：
+REJECT
+{"bboxes": [[x1, y1, x2, y2], ...]}
+
+其中坐标为相对坐标（0到1之间的小数），(x1, y1) 为左上角，(x2, y2) 为右下角。
+可以输出多个区域。示例：
+REJECT
+{"bboxes": [[0.1, 0.2, 0.3, 0.5], [0.5, 0.6, 0.8, 0.9]]}"""
+    
     def __init__(self, config: dict, context=None, proxy: str = None):
         self.config = config
         self.context = context
@@ -33,6 +52,10 @@ class ImageModerator:
         if custom_prompt and custom_prompt.strip():
             return custom_prompt.strip()
         return self.DEFAULT_MODERATION_PROMPT
+    
+    def get_mosaic_prompt(self) -> str:
+        """获取打码模式的审查提示词"""
+        return self.MOSAIC_MODERATION_PROMPT
     
     def is_enabled(self) -> bool:
         """检查审查是否启用"""
@@ -76,6 +99,7 @@ class ImageModerator:
             retry_same: 从同一图源重新取图
             switch_source: 切换到其他图源
             notify_user: 提示用户审核失败
+            mosaic: 对不适宜区域打码
         """
         return self.config.get("failed_action", "retry_same")
     
@@ -83,7 +107,48 @@ class ImageModerator:
         """获取最大重试次数"""
         return self.config.get("max_retries", 3)
     
-    async def moderate_with_builtin(self, img: Image.Image, provider_id: str) -> tuple:
+    def get_mosaic_block_size(self) -> int:
+        """获取马赛克块大小"""
+        return self.config.get("mosaic_block_size", 15)
+    
+    def _parse_bboxes(self, text: str) -> list:
+        """从响应文本中解析边界框坐标"""
+        bboxes = []
+        
+        # 尝试提取 JSON 部分
+        json_match = re.search(r'\{[\s\S]*"bboxes"[\s\S]*\}', text)
+        if json_match:
+            try:
+                data = json.loads(json_match.group())
+                if "bboxes" in data:
+                    for bbox in data["bboxes"]:
+                        if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                            # 验证坐标是否有效
+                            if all(isinstance(v, (int, float)) for v in bbox[:4]):
+                                bboxes.append(tuple(bbox[:4]))
+            except json.JSONDecodeError:
+                pass
+        
+        # 如果没有找到 JSON，尝试匹配 [x, y, x, y] 格式
+        if not bboxes:
+            pattern = r'\[(\d+\.?\d*)\s*,\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)\]'
+            matches = re.findall(pattern, text)
+            for match in matches:
+                bboxes.append(tuple(float(x) for x in match))
+        
+        return bboxes
+    
+    def _extract_json_from_response(self, response) -> str:
+        """从响应对象中提取文本内容"""
+        if hasattr(response, 'completion_text'):
+            return response.completion_text
+        elif isinstance(response, dict):
+            return response.get("content", "")
+        else:
+            return str(response)
+    
+    async def moderate_with_builtin(self, img: Image.Image, provider_id: str, 
+                                     prompt: str = None) -> tuple:
         """使用 AstrBot 内置提供商进行图片审查"""
         temp_path = None
         try:
@@ -119,33 +184,35 @@ class ImageModerator:
 
             logger.info(f"[图片审查] 图片已保存到临时文件: {temp_path}")
 
-            # 构建提示词
-            prompt = self.get_moderation_prompt()
+            # 使用传入的提示词或默认提示词
+            use_prompt = prompt or self.get_moderation_prompt()
 
             logger.info(f"[图片审查] 发送审查请求到提供商...")
 
             # 使用 text_chat 方法，传入图片文件路径
             response = await provider.text_chat(
-                prompt=prompt,
+                prompt=use_prompt,
                 image_urls=[temp_path]
             )
 
             logger.info(f"[图片审查] 收到响应: {response}")
 
             # 提取响应内容
-            if hasattr(response, 'completion_text'):
-                result = response.completion_text.strip().upper()
-            elif isinstance(response, dict):
-                result = response.get("content", "").strip().upper()
-            else:
-                result = str(response).strip().upper()
+            result = self._extract_json_from_response(response)
+            result_upper = result.strip().upper()
 
-            if "PASS" in result:
+            if "PASS" in result_upper:
                 logger.info("[图片审查] 审查通过")
                 return True, "审查通过"
-            elif "REJECT" in result:
-                logger.warning(f"[图片审查] 图片被拒绝: {result}")
-                return False, "图片内容不适宜"
+            elif "REJECT" in result_upper:
+                # 尝试解析边界框坐标
+                bboxes = self._parse_bboxes(result)
+                if bboxes:
+                    logger.warning(f"[图片审查] 图片不适宜，检测到 {len(bboxes)} 个区域需要打码")
+                    return False, "图片内容不适宜", bboxes
+                else:
+                    logger.warning(f"[图片审查] 图片被拒绝: {result}")
+                    return False, "图片内容不适宜", []
             else:
                 logger.warning(f"[图片审查] 审查结果无法解析: {result}")
                 return True, f"审查结果未知: {result}"
@@ -163,7 +230,8 @@ class ImageModerator:
                     logger.warning(f"[图片审查] 删除临时文件失败: {e}")
     
     async def moderate_with_openai(self, img: Image.Image, api_key: str, 
-                                    api_base: str, model: str) -> tuple:
+                                    api_base: str, model: str,
+                                    prompt: str = None) -> tuple:
         """使用 OpenAI Compatible API 进行图片审查"""
         try:
             img_base64 = ImageUtils.image_to_base64(img)
@@ -173,18 +241,21 @@ class ImageModerator:
                 "Content-Type": "application/json"
             }
             
+            # 使用传入的提示词或默认提示词
+            use_prompt = prompt or self.get_moderation_prompt()
+            
             payload = {
                 "model": model,
                 "messages": [
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": self.get_moderation_prompt()},
+                            {"type": "text", "text": use_prompt},
                             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
                         ]
                     }
                 ],
-                "max_tokens": 10
+                "max_tokens": 200  # 增加以容纳坐标输出
             }
             
             async with aiohttp.ClientSession() as session:
@@ -197,12 +268,19 @@ class ImageModerator:
                         return True, f"API 请求失败: {resp.status} - {error_text}"
                     
                     data = await resp.json()
-                    result = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip().upper()
+                    result = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    result_upper = result.strip().upper()
                     
-                    if "PASS" in result:
+                    if "PASS" in result_upper:
                         return True, "审查通过"
-                    elif "REJECT" in result:
-                        return False, "图片内容不适宜"
+                    elif "REJECT" in result_upper:
+                        # 尝试解析边界框坐标
+                        bboxes = self._parse_bboxes(result)
+                        if bboxes:
+                            logger.warning(f"[图片审查] 图片不适宜，检测到 {len(bboxes)} 个区域需要打码")
+                            return False, "图片内容不适宜", bboxes
+                        else:
+                            return False, "图片内容不适宜", []
                     else:
                         logger.warning(f"审查结果无法解析: {result}")
                         return True, f"审查结果未知: {result}"
@@ -212,24 +290,37 @@ class ImageModerator:
             return True, f"审查出错: {e}"
     
     async def moderate(self, img: Image.Image) -> tuple:
-        """执行图片审查"""
+        """执行图片审查
+        
+        Returns:
+            tuple: (passed: bool, message: str, bboxes: list)
+            - passed: True 表示通过，False 表示不通过或需要打码
+            - message: 状态描述
+            - bboxes: 需要打码的区域列表（仅在打码模式下有值）
+        """
         logger.info(f"[图片审查] 开始审查，配置: {self.config}")
 
         if not self.is_enabled():
             logger.info("[图片审查] 审查未启用")
-            return True, "审查未启用"
+            return True, "审查未启用", []
 
         provider_type = self.config.get("provider_type", "builtin")
-        logger.info(f"[图片审查] 使用提供商类型: {provider_type}")
+        failed_action = self.get_failed_action()
+        
+        # 判断是否使用打码模式
+        use_mosaic = failed_action == "mosaic"
+        prompt = self.get_mosaic_prompt() if use_mosaic else self.get_moderation_prompt()
+        
+        logger.info(f"[图片审查] 使用提供商类型: {provider_type}, 打码模式: {use_mosaic}")
         
         if provider_type == "builtin":
             provider_id = self.config.get("builtin_provider_id", "")
             logger.info(f"[图片审查] 内置提供商ID: {provider_id}")
             if not provider_id:
                 logger.warning("[图片审查] 未配置内置提供商ID")
-                return True, "未配置内置提供商ID"
+                return True, "未配置内置提供商ID", []
             logger.info(f"[图片审查] 调用内置提供商审查: {provider_id}")
-            result = await self.moderate_with_builtin(img, provider_id)
+            result = await self.moderate_with_builtin(img, provider_id, prompt)
             logger.info(f"[图片审查] 审查结果: {result}")
             return result
         
@@ -241,12 +332,37 @@ class ImageModerator:
             logger.info(f"[图片审查] OpenAI Compatible API配置 - base: {api_base}, model: {model}")
             if not api_key:
                 logger.warning("[图片审查] 未配置 OpenAI API Key")
-                return True, "未配置 OpenAI API Key"
+                return True, "未配置 OpenAI API Key", []
 
-            result = await self.moderate_with_openai(img, api_key, api_base, model)
+            result = await self.moderate_with_openai(img, api_key, api_base, model, prompt)
             logger.info(f"[图片审查] 审查结果: {result}")
             return result
 
         else:
             logger.error(f"[图片审查] 未知的提供商类型: {provider_type}")
-            return True, f"未知的提供商类型: {provider_type}"
+            return True, f"未知的提供商类型: {provider_type}", []
+    
+    async def moderate_and_mosaic(self, img: Image.Image) -> tuple:
+        """执行图片审查，如果不适宜则打码处理
+        
+        Returns:
+            tuple: (processed_img: Image.Image, passed: bool, message: str)
+            - processed_img: 处理后的图片（可能已打码）
+            - passed: True 表示原图通过，False 表示已打码
+            - message: 状态描述
+        """
+        passed, message, bboxes = await self.moderate(img)
+        
+        if passed:
+            return img, True, message
+        
+        if not bboxes:
+            # 没有坐标，无法打码
+            return img, False, message
+        
+        # 应用马赛克
+        block_size = self.get_mosaic_block_size()
+        processed_img = ImageUtils.apply_mosaic_multi(img, bboxes, block_size)
+        logger.info(f"[图片审查] 已对 {len(bboxes)} 个区域应用马赛克")
+        
+        return processed_img, False, f"已对 {len(bboxes)} 个不适宜区域打码处理"

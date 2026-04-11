@@ -120,8 +120,14 @@
       "failed_action": {
         "description": "审核失败后的行为",
         "type": "string",
-        "hint": "当图片审核不通过时的处理方式：retry_same（从同一图源重新取图）、switch_source（切换到其他图源）、notify_user（提示用户审核失败）",
+        "hint": "当图片审核不通过时的处理方式：retry_same（从同一图源重新取图）、switch_source（切换到其他图源）、notify_user（提示用户审核失败）、mosaic（对不适宜区域打码）",
         "default": "retry_same"
+      },
+      "mosaic_block_size": {
+        "description": "马赛克块大小",
+        "type": "int",
+        "hint": "打码时马赛克的块大小（像素），值越大马赛克越粗糙",
+        "default": 15
       }
     }
   },
