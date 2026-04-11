@@ -167,13 +167,13 @@ REJECT
 
             if not self.context:
                 logger.error("[图片审查] 无上下文，无法使用内置提供商")
-                return True, "无上下文，无法使用内置提供商"
+                return True, "无上下文，无法使用内置提供商", []
 
             # 使用 context.get_provider_by_id() 获取提供商
             provider = self.context.get_provider_by_id(provider_id)
             if not provider:
                 logger.error(f"[图片审查] 未找到提供商: {provider_id}")
-                return True, f"未找到提供商: {provider_id}"
+                return True, f"未找到提供商: {provider_id}", []
 
             logger.info(f"[图片审查] 找到提供商: {provider.meta().id}")
 
@@ -214,7 +214,7 @@ REJECT
 
             if "PASS" in result_upper:
                 logger.info("[图片审查] 审查通过")
-                return True, "审查通过"
+                return True, "审查通过", []
             elif "REJECT" in result_upper:
                 # 尝试解析边界框坐标
                 bboxes = self._parse_bboxes(result)
@@ -226,11 +226,11 @@ REJECT
                     return False, "图片内容不适宜", []
             else:
                 logger.warning(f"[图片审查] 审查结果无法解析: {result}")
-                return True, f"审查结果未知: {result}"
+                return True, f"审查结果未知: {result}", []
 
         except Exception as e:
             logger.error(f"[图片审查] 内置提供商审查失败: {e}", exc_info=True)
-            return True, f"审查出错: {e}"
+            return True, f"审查出错: {e}", []
         finally:
             # 清理临时文件
             if temp_path and os.path.exists(temp_path):
@@ -276,14 +276,14 @@ REJECT
                                         proxy=self.proxy) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
-                        return True, f"API 请求失败: {resp.status} - {error_text}"
+                        return True, f"API 请求失败: {resp.status} - {error_text}", []
                     
                     data = await resp.json()
                     result = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                     result_upper = result.strip().upper()
                     
                     if "PASS" in result_upper:
-                        return True, "审查通过"
+                        return True, "审查通过", []
                     elif "REJECT" in result_upper:
                         # 尝试解析边界框坐标
                         bboxes = self._parse_bboxes(result)
@@ -294,11 +294,11 @@ REJECT
                             return False, "图片内容不适宜", []
                     else:
                         logger.warning(f"审查结果无法解析: {result}")
-                        return True, f"审查结果未知: {result}"
+                        return True, f"审查结果未知: {result}", []
                         
         except Exception as e:
             logger.error(f"OpenAI Compatible API 审查失败: {e}")
-            return True, f"审查出错: {e}"
+            return True, f"审查出错: {e}", []
     
     async def moderate(self, img: Image.Image) -> tuple:
         """执行图片审查
