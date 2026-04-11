@@ -128,6 +128,12 @@
         "type": "int",
         "hint": "打码时马赛克的块大小（像素），值越大马赛克越粗糙",
         "default": 15
+      },
+      "mosaic_prompt": {
+        "description": "打码审查提示词",
+        "type": "string",
+        "hint": "打码模式下的自定义审查提示词。留空使用默认提示词（针对二次元图片优化）。AI需输出PASS或REJECT+坐标",
+        "default": ""
       }
     }
   },

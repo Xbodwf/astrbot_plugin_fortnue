@@ -24,22 +24,30 @@ class ImageModerator:
 
 只回复 PASS 或 REJECT，不要其他内容。"""
     
-    MOSAIC_MODERATION_PROMPT = """请分析这张图片，判断是否包含以下不适宜内容：
-1. 色情/成人内容
-2. 暴力/血腥内容
-3. 违法/危险内容
-4. 极端或令人不适的内容
+    DEFAULT_MOSAIC_MODERATION_PROMPT = """请分析这张二次元风格图片，判断是否包含真正不适宜的内容。
 
-如果图片安全、适合一般用户查看，请只回复 "PASS"。
+【重要】以下情况应当判定为 PASS（通过），无需打码：
+- 正常的二次元插画、动漫角色立绘
+- 穿着正常服装的角色（包括泳装、露背装、短裤等常见服装）
+- 角色的正常身体曲线和轮廓展示
+- 美术风格的肌肤展示（如光滑的背部、腿部等）
+- 轻度性感的服装或姿势（只要没有明显暴露私密部位）
+- 艺术风格的绘画作品
 
-如果包含不适宜内容，请输出不适宜区域的坐标，格式如下：
+【应当判定为 REJECT】仅以下真正不适宜的内容需要打码：
+- 明确暴露的私密部位（生殖器、女性乳头等）
+- 明显的性行为暗示或姿势
+- 极度暴力的画面（大量血液、残肢等）
+- 违法或极端令人不适的内容
+
+如果图片通过审查，请只回复 "PASS"。
+
+如果确实包含不适宜内容需要打码，请输出：
 REJECT
 {"bboxes": [[x1, y1, x2, y2], ...]}
 
 其中坐标为相对坐标（0到1之间的小数），(x1, y1) 为左上角，(x2, y2) 为右下角。
-可以输出多个区域。示例：
-REJECT
-{"bboxes": [[0.1, 0.2, 0.3, 0.5], [0.5, 0.6, 0.8, 0.9]]}"""
+仅标记真正需要遮挡的私密区域，不要过度标记。"""
     
     def __init__(self, config: dict, context=None, proxy: str = None):
         self.config = config
@@ -55,7 +63,10 @@ REJECT
     
     def get_mosaic_prompt(self) -> str:
         """获取打码模式的审查提示词"""
-        return self.MOSAIC_MODERATION_PROMPT
+        custom_prompt = self.config.get("mosaic_prompt", "")
+        if custom_prompt and custom_prompt.strip():
+            return custom_prompt.strip()
+        return self.DEFAULT_MOSAIC_MODERATION_PROMPT
     
     def is_enabled(self) -> bool:
         """检查审查是否启用"""
