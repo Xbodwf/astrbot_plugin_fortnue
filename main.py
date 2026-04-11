@@ -15,7 +15,7 @@ from .core import BackgroundManager, FortuneGenerator, ImageModerator
 from .utils import ImageUtils
 
 
-@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "1.30.0")
+@register("astrbot_plugin_fortnue", "Xbodw", "今日运势生成器 - 生成一张二次元风格的运势图片", "2.0.1")
 class FortunePlugin(Star):
     """今日运势插件 - 生成精美的运势图片"""
     
