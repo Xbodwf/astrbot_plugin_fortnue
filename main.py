@@ -340,6 +340,12 @@ class FortunePlugin(Star):
             logger.error(f"获取上次背景图片失败: {e}")
             yield event.plain_result(f"获取失败: {e}")
 
+    @jrysl.command("restore")
+    async def restore(self, event: AstrMessageEvent):
+        """重置所有人的运势数据"""
+        count = self.fortune_generator.reset_all_fortune_data()
+        yield event.plain_result(f"已重置 {count} 位用户的运势数据，下次生成运势将重新随机。")
+
     @jrysl.group("none")
     async def none(self, event: AstrMessageEvent):
         """单独从图源中刷图（无运势信息）"""

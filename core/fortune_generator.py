@@ -46,6 +46,13 @@ class FortuneGenerator:
         except Exception as e:
             logger.error(f"保存运势数据失败: {e}")
     
+    def reset_all_fortune_data(self) -> int:
+        """重置所有用户的运势数据，返回被重置的用户数量"""
+        count = len(self.user_fortune_data)
+        self.user_fortune_data = {}
+        self._save_yunshi_data()
+        return count
+    
     def _load_fortune_data(self) -> dict:
         """加载运势数据"""
         fortune_data_path = os.path.join(self.data_dir, "fortune_data.json")
