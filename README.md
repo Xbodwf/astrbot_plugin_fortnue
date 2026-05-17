@@ -119,7 +119,7 @@
 }
 ```
 
-> [NOTE]
+> [!NOTE]
 > - `addition` 字段支持模板字符串，变量名需与 `object` 中的键或 API 返回的 JSON 结构对应。
 > - `img_headers` 非常重要，尤其是对于 Pixiv 等有防盗链限制的图源，通常需要配置 `referer`。
 > - 修改 `backgrounds.json` 后无需重启插件，下次请求会自动加载新配置。
